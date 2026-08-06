@@ -6,6 +6,7 @@ uma hipótese: o comentário no início de cada classe descreve o sintoma.
 
 import json
 import logging
+import sys
 import tempfile
 import threading
 import time
@@ -16,7 +17,7 @@ from unittest import mock
 from macropad.actions import base
 from macropad.actions.base import ActionContext
 from macropad.actions.executor import ActionRunner
-from macropad.core import profile_io
+from macropad.core import autostart, profile_io
 from macropad.core.models import Action, Profile, Settings
 from macropad.core.store import Store
 from macropad.device import protocol
@@ -305,6 +306,33 @@ class SegredosNoCofreTest(unittest.TestCase):
         store.save()
 
         self.assertNotIn("ha_token", cofre.guardados)
+
+
+class ComandoDeInicializacaoTest(unittest.TestCase):
+    """O comando gravado na chave Run usava sempre ``-m macropad``, que não
+    existe no executável empacotado: a inicialização automática falharia
+    silenciosamente justamente na instalação distribuída.
+    """
+
+    def test_no_executavel_empacotado_usa_o_proprio_exe(self):
+        with mock.patch.object(sys, "frozen", True, create=True), mock.patch.object(
+            sys, "executable", r"C:\Apps\MacropadConfigurator.exe"
+        ):
+            comando = autostart._command()
+
+        self.assertEqual(comando, r'"C:\Apps\MacropadConfigurator.exe" --minimized')
+        self.assertNotIn("-m macropad", comando)
+
+    def test_a_partir_do_codigo_usa_o_python_com_o_modulo(self):
+        # Sem sys.frozen: execução normal a partir do ambiente virtual.
+        self.assertFalse(getattr(sys, "frozen", False))
+        comando = autostart._command()
+
+        self.assertIn("-m macropad", comando)
+        self.assertTrue(comando.endswith("--minimized"))
+
+    def test_sempre_inicia_direto_na_bandeja(self):
+        self.assertIn("--minimized", autostart._command())
 
 
 class TrocaDePerfisTest(unittest.TestCase):

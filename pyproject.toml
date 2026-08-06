@@ -27,6 +27,7 @@ dependencies = [
 dev = [
     "ruff>=0.6",
     "mypy>=1.11",
+    "pyinstaller>=6.0",
 ]
 
 [project.scripts]
@@ -65,6 +66,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Credenciais fictícias usadas para montar objetos de teste.
 "tests/*" = ["S105", "S106"]
+# Scripts de build: chamam ferramentas com argumentos escritos no próprio
+# arquivo (S603) e precisam definir QT_QPA_PLATFORM antes de importar Qt (E402).
+"tools/*" = ["S603", "E402"]
 
 # ----------------------------------------------------------------- mypy
 [tool.mypy]

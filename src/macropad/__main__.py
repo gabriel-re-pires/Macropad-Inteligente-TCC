@@ -41,7 +41,7 @@ def main() -> int:
 
     core = MacropadApp()
     window = MainWindow(core)
-    instance.activated.connect(window.show_from_tray)
+    instance.activated.connect(window.present)
     if not start_minimized:
         window.show()
     return qt_app.exec()

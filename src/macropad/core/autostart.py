@@ -1,8 +1,11 @@
 """Inicialização automática com o Windows.
 
-Registra o aplicativo em ``HKCU\\...\\Run`` apontando para o ``pythonw.exe``
-do ambiente virtual com ``-m macropad --minimized`` (inicia direto na
-bandeja, sem janela). Sem privilégios de administrador.
+Registra o aplicativo em ``HKCU\\...\\Run`` com ``--minimized`` (inicia
+direto na bandeja, sem janela). Sem privilégios de administrador.
+
+O comando depende de como o aplicativo está rodando: no executável
+empacotado é o próprio ``.exe``; a partir do código-fonte é o
+``pythonw.exe`` do ambiente virtual com ``-m macropad``.
 """
 
 from __future__ import annotations
@@ -15,7 +18,15 @@ _RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 _VALUE_NAME = "MacropadConfigurator"
 
 
+def _frozen() -> bool:
+    """``True`` quando rodando a partir do executável do PyInstaller."""
+    return getattr(sys, "frozen", False)
+
+
 def _command() -> str:
+    if _frozen():
+        # sys.executable é o próprio aplicativo; "-m macropad" não existe aqui.
+        return f'"{Path(sys.executable)}" --minimized'
     python = Path(sys.executable)
     pythonw = python.with_name("pythonw.exe")
     exe = pythonw if pythonw.exists() else python

@@ -8,13 +8,9 @@ from typing import Any
 from PySide6.QtCore import QSettings, Qt, QTimer
 from PySide6.QtGui import (
     QAction,
-    QBrush,
-    QColor,
     QCursor,
     QIcon,
     QKeySequence,
-    QPainter,
-    QPixmap,
     QShortcut,
 )
 from PySide6.QtWidgets import (
@@ -37,6 +33,7 @@ from ..core import autostart, icons
 from ..core.models import Action, Profile
 from ..device import protocol
 from ..device.link import available_ports
+from . import app_icon
 from .action_editor import ActionEditorDialog
 from .key_grid import KeyGrid
 from .oled_preview import OledPreview
@@ -163,7 +160,7 @@ class MainWindow(QMainWindow):
         self._tray.setToolTip(APP_NAME)
         menu = QMenu()
         open_action = QAction("Abrir configurador", menu)
-        open_action.triggered.connect(self.show_from_tray)
+        open_action.triggered.connect(self.present)
         menu.addAction(open_action)
         menu.addSeparator()
         # O aplicativo passa a maior parte do tempo oculto na bandeja: trocar
@@ -177,16 +174,24 @@ class MainWindow(QMainWindow):
         self._tray_menu = menu
         self._tray.setContextMenu(menu)
         self._tray.activated.connect(
-            lambda reason: self.show_from_tray()
+            lambda reason: self.present()
             if reason == QSystemTrayIcon.Trigger
             else None
         )
         self._tray.show()
 
-    def show_from_tray(self) -> None:
-        """Restaura e foca a janela (bandeja ou segunda instância aberta)."""
-        self.show()
-        self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
+    def present(self) -> None:
+        """Mostra a janela, restaurada e à frente.
+
+        Usada pelo ícone da bandeja e quando uma segunda instância pede
+        que esta apareça — nos dois casos a janela pode estar minimizada,
+        e ``showNormal()`` a restaura preservando a distinção entre
+        minimizada e maximizada.
+        """
+        if self.isMaximized():
+            self.showMaximized()
+        else:
+            self.showNormal()
         self.raise_()
         self.activateWindow()
 
@@ -461,18 +466,5 @@ class MainWindow(QMainWindow):
 
 
 def _app_icon() -> QIcon:
-    """Desenha o ícone do aplicativo (grade 3x6 de teclas) em tempo real."""
-    pixmap = QPixmap(64, 64)
-    pixmap.fill(Qt.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.Antialiasing)
-    painter.setBrush(QBrush(QColor("#14171e")))
-    painter.setPen(QColor("#2a2f3a"))
-    painter.drawRoundedRect(2, 8, 60, 48, 10, 10)
-    painter.setPen(Qt.NoPen)
-    painter.setBrush(QBrush(QColor("#8cebff")))
-    for row in range(3):
-        for col in range(6):
-            painter.drawRoundedRect(8 + col * 9, 16 + row * 12, 6, 8, 2, 2)
-    painter.end()
-    return QIcon(pixmap)
+    """Ícone do aplicativo (ver :mod:`macropad.ui.app_icon`)."""
+    return app_icon.icon()

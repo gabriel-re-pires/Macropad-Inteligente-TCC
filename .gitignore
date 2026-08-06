@@ -4,3 +4,5 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+# Gerado pelo tools/build_exe.py a cada execução.
+*.spec

@@ -73,6 +73,29 @@ integralmente pelo mypy; em `ui/` o código `attr-defined` fica desligado
 porque o PySide6 aceita o atalho de enums (`Qt.AlignHCenter`) que suas
 stubs não declaram.
 
+## Gerar o executável
+
+Para rodar em um Windows sem Python instalado (a máquina da
+apresentação, por exemplo):
+
+```powershell
+.venv\Scripts\python -m pip install -e ".[dev]"
+.venv\Scripts\python tools\build_exe.py
+```
+
+O resultado é `dist\MacropadConfigurator.exe` — arquivo único, sem
+console. O ícone é gerado a partir do mesmo desenho usado pela janela e
+pela bandeja (`tools\make_icon.py`), então nunca diverge.
+
+## Compartilhar perfis
+
+**Exportar…** grava o perfil selecionado em um `.json` com o ícone
+embutido; **Importar…** o acrescenta em outra máquina, com um `id` novo.
+
+Um perfil pode conter ações que executam comandos ou abrem programas com
+os seus privilégios. Ao importar, o aplicativo lista essas ações e pede
+confirmação — importe apenas de fontes confiáveis.
+
 ## Registro de log
 
 O aplicativo roda sem console, então as mensagens vão para
@@ -95,8 +118,9 @@ consultar quando algo não funciona.
 src/macropad/
 ├── core/          # domínio: modelos, perfis, persistência, controlador
 ├── device/        # protocolo JSON-serial, enlace pyserial, simulador
-├── actions/       # motor de ações (registry + thread de execução)
+├── actions/       # motor de ações (registry + duas vias de execução)
 ├── integrations/  # Home Assistant, OBS, app em foco
 └── ui/            # interface PySide6 (janela, bandeja, diálogos)
+tools/             # geração do ícone e do executável
 firmware/          # sketch Arduino do ESP32-C3 (ajustar pinos em config.h)
 ```
