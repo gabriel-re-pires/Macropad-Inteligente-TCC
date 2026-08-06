@@ -7,12 +7,19 @@ uma hipótese: o comentário no início de cada classe descreve o sintoma.
 import json
 import logging
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
+from macropad.actions import base
+from macropad.actions.base import ActionContext
+from macropad.actions.executor import ActionRunner
 from macropad.core.models import Action, Profile, Settings
 from macropad.core.store import Store
+from macropad.device import protocol
+from macropad.device.link import SerialLink
 from macropad.device.simulator import SimulatorLink
 
 
@@ -213,6 +220,175 @@ class FalhaAoSalvarTest(unittest.TestCase):
 
     def test_salvar_com_sucesso_devolve_true(self):
         self.assertTrue(self.store.save())
+
+
+class FilaDeAcoesTest(unittest.TestCase):
+    """A fila era única e bloqueante: um webhook parado no timeout de 5 s
+    atrasava todas as teclas seguintes. Também era ilimitada (teclas
+    marteladas viravam um lote que disparava tudo depois) e o encerramento
+    esperava executar o que estivesse pendente.
+    """
+
+    def setUp(self):
+        # Os tipos de ação de teste não podem vazar para os outros testes.
+        self._registry = dict(base._registry)
+        logging.disable(logging.CRITICAL)
+
+    def tearDown(self):
+        base._registry.clear()
+        base._registry.update(self._registry)
+        logging.disable(logging.NOTSET)
+
+    def _registrar_bloqueante(self, liberar: threading.Event) -> threading.Event:
+        """Registra uma ação de rede que trava até ``liberar`` ser acionado."""
+        comecou = threading.Event()
+
+        @base.register("t_rede", "Rede lenta", "", remote=True)
+        def _rede(params, ctx):
+            comecou.set()
+            liberar.wait(timeout=5)
+
+        return comecou
+
+    def test_acao_de_rede_nao_atrasa_as_teclas(self):
+        liberar = threading.Event()
+        comecou = self._registrar_bloqueante(liberar)
+
+        prontas = threading.Event()
+        executadas = []
+
+        @base.register("t_local", "Atalho", "")
+        def _local(params, ctx):
+            executadas.append(params["n"])
+            if len(executadas) == 3:
+                prontas.set()
+
+        runner = ActionRunner(context=ActionContext())
+        # As limpezas rodam na ordem inversa do registro: liberar a ação
+        # travada precisa acontecer antes do stop(), senão o join espera.
+        self.addCleanup(runner.stop)
+        self.addCleanup(liberar.set)
+
+        runner.submit(Action(type="t_rede"))
+        self.assertTrue(comecou.wait(timeout=3), "a via de rede não iniciou")
+        for n in range(3):
+            runner.submit(Action(type="t_local", params={"n": n}))
+
+        self.assertTrue(prontas.wait(timeout=3), "as teclas ficaram presas")
+        self.assertEqual(executadas, [0, 1, 2])
+        # E a ação de rede continua travada — as teclas passaram na frente.
+        self.assertFalse(liberar.is_set())
+
+    def test_fila_cheia_descarta_com_aviso(self):
+        liberar = threading.Event()
+        comecou = self._registrar_bloqueante(liberar)
+
+        avisos = []
+        runner = ActionRunner(context=ActionContext(), on_error=avisos.append)
+        self.addCleanup(runner.stop)
+        self.addCleanup(liberar.set)
+
+        runner.submit(Action(type="t_rede"))
+        self.assertTrue(comecou.wait(timeout=3))
+        # A via está ocupada e a fila, vazia: o excedente é exato.
+        for _ in range(ActionRunner.QUEUE_MAX + 3):
+            runner.submit(Action(type="t_rede"))
+
+        self.assertEqual(len(avisos), 3)
+        self.assertIn("descartada", avisos[0])
+
+    def test_encerrar_nao_executa_o_que_ficou_na_fila(self):
+        liberar = threading.Event()
+        comecou = self._registrar_bloqueante(liberar)
+
+        contadas = []
+
+        @base.register("t_conta", "Conta", "", remote=True)
+        def _conta(params, ctx):
+            contadas.append(params["n"])
+
+        runner = ActionRunner(context=ActionContext())
+        runner.submit(Action(type="t_rede"))
+        self.assertTrue(comecou.wait(timeout=3))
+        for n in range(3):
+            runner.submit(Action(type="t_conta", params={"n": n}))
+
+        # A thread está presa na ação de rede; o join expira depressa.
+        with mock.patch.object(ActionRunner, "JOIN_TIMEOUT_S", 0.2):
+            runner.stop()
+        liberar.set()
+        time.sleep(0.3)
+
+        self.assertEqual(contadas, [], "ações pendentes rodaram no encerramento")
+
+    def test_tipo_desconhecido_e_reportado_sem_enfileirar(self):
+        avisos = []
+        runner = ActionRunner(context=ActionContext(), on_error=avisos.append)
+        self.addCleanup(runner.stop)
+
+        runner.submit(Action(type="nao_existe"))
+
+        self.assertEqual(len(avisos), 1)
+        self.assertIn("desconhecido", avisos[0])
+
+
+class RodizioDePortasTest(unittest.TestCase):
+    """``_find_port`` devolvia sempre a primeira candidata. Se ela não fosse
+    o macropad (outro conversor USB-serial ligado, por exemplo), o enlace
+    tentava a mesma porta indefinidamente e nunca achava o dispositivo.
+    """
+
+    class PortaFalsa:
+        def __init__(self, device, vid):
+            self.device = device
+            self.vid = vid
+            self.description = ""
+
+    def setUp(self):
+        self.portas = [
+            self.PortaFalsa("COM3", 0x1234),                  # outro conversor
+            self.PortaFalsa("COM4", 0x5678),                  # mais um
+            self.PortaFalsa("COM5", protocol.ESPRESSIF_VID),  # o macropad
+            self.PortaFalsa("COM1", None),                    # não é USB
+        ]
+        patcher = mock.patch(
+            "macropad.device.link.list_ports.comports", return_value=self.portas
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _link(self, preferred=None) -> SerialLink:
+        return SerialLink(
+            on_message=lambda m: None,
+            on_state=lambda conectado, porta: None,
+            preferred_port=preferred,
+        )
+
+    def test_espressif_vem_primeiro_e_portas_sem_vid_ficam_de_fora(self):
+        self.assertEqual(self._link()._candidates(), ["COM5", "COM3", "COM4"])
+
+    def test_alterna_entre_as_candidatas_que_falharam(self):
+        link = self._link()
+        tentadas = []
+        for _ in range(3):
+            porta = link._find_port()
+            tentadas.append(porta)
+            link._rejected.add(porta)  # simula falha de handshake
+        self.assertEqual(tentadas, ["COM5", "COM3", "COM4"])
+
+    def test_reinicia_a_rodada_quando_todas_falharam(self):
+        link = self._link()
+        link._rejected.update({"COM3", "COM4", "COM5"})
+        # O macropad pode ter sido ligado depois: vale tentar de novo.
+        self.assertEqual(link._find_port(), "COM5")
+
+    def test_porta_fixada_e_a_unica_considerada(self):
+        self.assertEqual(self._link("COM4")._candidates(), ["COM4"])
+
+    def test_porta_fixada_ausente_nao_cai_para_outra(self):
+        link = self._link("COM9")
+        self.assertEqual(link._candidates(), [])
+        self.assertIsNone(link._find_port())
 
 
 if __name__ == "__main__":

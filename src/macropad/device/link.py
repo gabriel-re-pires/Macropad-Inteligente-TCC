@@ -62,6 +62,9 @@ class SerialLink:
         self._thread: threading.Thread | None = None
         self._running = False
         self._write_lock = threading.Lock()
+        # Portas que responderam algo que não é o macropad. Guardá-las evita
+        # insistir para sempre na mesma quando há outros dispositivos USB.
+        self._rejected: set[str] = set()
 
     # ------------------------------------------------------------- ciclo
 
@@ -112,24 +115,46 @@ class SerialLink:
                     self._on_state(False, port)
             time.sleep(self.RECONNECT_DELAY_S)
 
-    def _find_port(self) -> str | None:
+    def _candidates(self) -> list[str]:
+        """Portas plausíveis, das mais prováveis para as menos."""
         ports = list_ports.comports()
         if self.preferred_port:
-            for p in ports:
-                if p.device == self.preferred_port:
-                    return p.device
-            return None
+            return [p.device for p in ports if p.device == self.preferred_port]
         espressif = [p.device for p in ports if p.vid == protocol.ESPRESSIF_VID]
-        if espressif:
-            return espressif[0]
-        usb = [p.device for p in ports if p.vid is not None]
-        return usb[0] if usb else None
+        outras = [
+            p.device
+            for p in ports
+            if p.vid is not None and p.device not in espressif
+        ]
+        return espressif + outras
+
+    def _find_port(self) -> str | None:
+        """Escolhe a próxima porta a tentar, alternando entre as candidatas.
+
+        Sem o rodízio, uma primeira porta que não fosse o macropad (outro
+        conversor USB-serial, por exemplo) seria tentada indefinidamente e
+        o dispositivo real nunca seria encontrado.
+        """
+        candidatos = self._candidates()
+        if not candidatos:
+            self._rejected.clear()
+            return None
+        pendentes = [c for c in candidatos if c not in self._rejected]
+        if not pendentes:
+            # Todas já falharam: recomeça a rodada (o macropad pode ter sido
+            # ligado depois, ou o firmware ainda estava inicializando).
+            self._rejected.clear()
+            pendentes = candidatos
+        return pendentes[0]
 
     def _connect_and_read(self, port: str) -> None:
         ser = serial.Serial(port, protocol.BAUD_RATE, timeout=0.5)
         self._serial = ser
         if not self._handshake(ser):
+            log.debug("%s não respondeu ao handshake", port)
+            self._rejected.add(port)
             return
+        self._rejected.discard(port)
         self._on_state(True, port)
         buffer = b""
         last_ping = time.monotonic()
@@ -155,8 +180,14 @@ class SerialLink:
         deadline = time.monotonic() + self.HANDSHAKE_TIMEOUT_S
         buffer = b""
         while time.monotonic() < deadline:
-            buffer += ser.read(64)
-            for line in buffer.split(b"\n"):
+            chunk = ser.read(64)
+            if not chunk:
+                continue
+            buffer += chunk
+            # Só linhas completas: decodificar fragmentos daria resultados
+            # imprevisíveis a cada leitura parcial.
+            while b"\n" in buffer:
+                line, buffer = buffer.split(b"\n", 1)
                 message = protocol.decode(line)
                 if message and message.get("t") in ("pong", "hello", "key"):
                     return True

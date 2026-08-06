@@ -52,10 +52,20 @@ o que permite testá-la isoladamente (18 testes em `tests/`).
    pela UI). Adicionar um tipo novo = registrar uma função; nenhuma outra
    camada muda.
 
-3. **Threads.** Três threads cooperam: a da UI (Qt), a do enlace serial
-   (leitura bloqueante + reconexão) e a do `ActionRunner` (fila de ações).
-   A comunicação entre elas usa sinais Qt (`DeviceBridge`), que são
-   thread-safe, e uma `queue.Queue` para as ações.
+3. **Threads.** Quatro threads cooperam: a da UI (Qt), a do enlace serial
+   (leitura bloqueante + reconexão) e **duas** do `ActionRunner`. A
+   comunicação entre elas usa sinais Qt (`DeviceBridge`), que são
+   thread-safe, e `queue.Queue` para as ações.
+
+   O `ActionRunner` tem duas vias porque as ações têm naturezas
+   diferentes: as de **entrada** (atalho, texto, mídia, comando, macro)
+   disputam o foco do teclado e precisam manter a ordem entre si; as de
+   **rede** (webhook, Home Assistant, OBS) podem levar segundos até
+   estourar o timeout. Numa via única, um webhook parado atrasaria todas
+   as teclas seguintes. O tipo de ação declara a via em que roda
+   (`remote=True` no `@register`). As filas são limitadas: martelar
+   teclas com algo travado descarta com aviso em vez de acumular um lote
+   que dispararia tudo depois.
 
 4. **Simulador** (`device/simulator.py`). Implementa a mesma interface
    `DeviceLink` do enlace serial; a janela do simulador renderiza os
@@ -100,7 +110,8 @@ o que permite testá-la isoladamente (18 testes em `tests/`).
 - **Novo tipo de ação:** registrar uma função em `actions/builtin.py`
   (ou um novo módulo importado por ele) com `@register(...)` e, se o
   formulário genérico não bastar, adicionar uma página em
-  `ui/action_editor.py`.
+  `ui/action_editor.py`. Se a ação fizer E/S de rede, passe
+  `remote=True` para que ela use a via própria e não atrase as teclas.
 - **Nova integração:** criar módulo em `integrations/` e expor como um
   tipo de ação.
 - **Novo hardware:** implementar a interface `DeviceLink`.

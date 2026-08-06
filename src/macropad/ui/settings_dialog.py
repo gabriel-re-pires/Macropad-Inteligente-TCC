@@ -23,16 +23,23 @@ from PySide6.QtWidgets import (
 )
 
 from ..actions.base import ActionError
-from ..core.models import KEY_COUNT, Settings
+from ..core.models import KEY_COUNT, Profile, Settings
 from ..integrations import home_assistant, obs
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, parent: QWidget | None, settings: Settings) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None,
+        settings: Settings,
+        profiles: list[Profile] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Configurações")
         self.setMinimumWidth(460)
         self._settings = settings
+        # Usados apenas para avisar se a tecla de modo escolhida já tem ação.
+        self._profiles = profiles or []
         # Ativado enquanto o usuário estiver "capturando" a tecla de modo.
         self.capturing_mode_key = False
 
@@ -168,7 +175,30 @@ class SettingsDialog(QDialog):
             return
         QMessageBox.information(self, "OBS Studio", f"Conectado: {message}")
 
+    def _confirm_mode_key(self, key: int) -> bool:
+        """Avisa se a tecla escolhida já tem ação configurada.
+
+        Como tecla de modo ela passa a só alternar perfis; sem o aviso, a
+        ação some da grade sem explicação.
+        """
+        afetados = [p.name for p in self._profiles if p.action_for(key) is not None]
+        if not afetados:
+            return True
+        lista = ", ".join(f"“{nome}”" for nome in afetados)
+        answer = QMessageBox.question(
+            self,
+            "Tecla de modo",
+            f"A tecla {key + 1} já tem ação configurada em: {lista}.\n\n"
+            "Como tecla de modo ela passará a apenas alternar perfis, e essas "
+            "ações ficarão inacessíveis (elas não são apagadas — voltam se "
+            "você escolher outra tecla de modo).\n\nUsar a tecla mesmo assim?",
+        )
+        return answer == QMessageBox.Yes
+
     def _accept(self) -> None:
+        mode_key = self._mode_combo.currentData()
+        if mode_key is not None and not self._confirm_mode_key(mode_key):
+            return
         self._settings.mode_key = self._mode_combo.currentData()
         self._settings.auto_switch_enabled = self._auto_switch_check.isChecked()
         self._settings.start_with_windows = self._autostart_check.isChecked()

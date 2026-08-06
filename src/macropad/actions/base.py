@@ -26,6 +26,10 @@ class ActionType:
     title: str           # nome exibido ao usuário
     description: str     # ajuda curta exibida no editor
     handler: Handler = field(repr=False, default=None)  # type: ignore[assignment]
+    # Ações "remotas" fazem E/S de rede e podem levar segundos. Executam em
+    # uma via própria para não atrasar as teclas seguintes; as demais
+    # dependem do foco do teclado e precisam manter a ordem entre si.
+    remote: bool = False
 
 
 @dataclass
@@ -36,9 +40,11 @@ class ActionContext:
     request_mode_switch: Callable[[], None] | None = None
 
 
-def register(name: str, title: str, description: str) -> Callable[[Handler], Handler]:
+def register(
+    name: str, title: str, description: str, *, remote: bool = False
+) -> Callable[[Handler], Handler]:
     def decorator(handler: Handler) -> Handler:
-        _registry[name] = ActionType(name, title, description, handler)
+        _registry[name] = ActionType(name, title, description, handler, remote=remote)
         return handler
 
     return decorator

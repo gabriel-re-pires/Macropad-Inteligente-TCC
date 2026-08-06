@@ -128,9 +128,7 @@ class MainWindow(QMainWindow):
         # ------------------------------------------------------------ sinais
         core.bridge.state.connect(self._set_connected)
         core.bridge.message.connect(self._on_device_message)
-        core.bridge.action_error.connect(
-            lambda msg: self.statusBar().showMessage(f"Erro: {msg}", 6000)
-        )
+        core.bridge.action_error.connect(self._on_action_error)
         core.bridge.profile_changed.connect(self._on_active_profile_changed)
 
         # ---------------------------------------------------------- atalhos
@@ -264,6 +262,17 @@ class MainWindow(QMainWindow):
         self._grid.flash(key)
         self.statusBar().showMessage(f"Tecla {key + 1} pressionada", 1500)
 
+    def _on_action_error(self, message: str) -> None:
+        """Reporta a falha de uma ação onde o usuário possa vê-la.
+
+        A barra de status não serve quando a janela está oculta na bandeja
+        — que é o estado normal de uso —, então nesse caso a notificação
+        vai pelo ícone da bandeja.
+        """
+        self.statusBar().showMessage(f"Erro: {message}", 6000)
+        if not self.isVisible() and self._tray.isVisible():
+            self._tray.showMessage(APP_NAME, message, QSystemTrayIcon.Warning, 5000)
+
     def _on_active_profile_changed(self, profile: Profile) -> None:
         self.statusBar().showMessage(f"Perfil ativo: {profile.name}", 3000)
         self._refresh_all()
@@ -354,7 +363,9 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(3000, lambda: self._core.runner.submit(action))
 
     def _open_settings(self) -> None:
-        dialog = SettingsDialog(self, self._core.store.settings)
+        dialog = SettingsDialog(
+            self, self._core.store.settings, self._core.store.profiles
+        )
         self._settings_dialog = dialog
         accepted = dialog.exec() == SettingsDialog.Accepted
         self._settings_dialog = None

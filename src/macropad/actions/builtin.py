@@ -87,6 +87,12 @@ def run_command(params: dict[str, Any], ctx: ActionContext) -> None:
         )
         if visible:
             # /k mantém o terminal aberto para o usuário ver a saída.
+            #
+            # Não use /s aqui: sem ele o cmd preserva as aspas do invólucro
+            # quando o conteúdo é um executável com espaço no caminho, o que
+            # faz um comando como C:\Program Files\app.exe (digitado sem
+            # aspas) funcionar. Com /s o cmd sempre remove a primeira e a
+            # última aspa e esse caso passa a falhar — verificado.
             command = f'cmd /k "{command}"'
     try:
         # shell=True é intencional: o comando é escrito pelo próprio usuário
@@ -171,6 +177,7 @@ def run_macro(params: dict[str, Any], ctx: ActionContext) -> None:
     "Home Assistant",
     "Chama um serviço do Home Assistant (ex.: apagar as luzes da sala). "
     "Configure a URL e o token em Configurações.",
+    remote=True,
 )
 def run_home_assistant(params: dict[str, Any], ctx: ActionContext) -> None:
     settings = ctx.settings
@@ -193,6 +200,7 @@ def run_home_assistant(params: dict[str, Any], ctx: ActionContext) -> None:
     "OBS Studio",
     "Controla o OBS via WebSocket: trocar cena, mudo, gravação, transmissão. "
     "Configure host/porta/senha em Configurações.",
+    remote=True,
 )
 def run_obs(params: dict[str, Any], ctx: ActionContext) -> None:
     from ..integrations import obs
@@ -214,6 +222,7 @@ def run_obs(params: dict[str, Any], ctx: ActionContext) -> None:
     "Webhook (HTTP)",
     "Chama uma URL (GET ou POST com JSON) — integra com n8n, IFTTT, "
     "Zapier ou qualquer serviço com webhooks.",
+    remote=True,
 )
 def run_webhook(params: dict[str, Any], ctx: ActionContext) -> None:
     import requests
