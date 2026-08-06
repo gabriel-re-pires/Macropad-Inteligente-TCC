@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QBrush, QColor, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QSettings, Qt, QTimer
+from PySide6.QtGui import (
+    QAction,
+    QBrush,
+    QColor,
+    QCursor,
+    QIcon,
+    QKeySequence,
+    QPainter,
+    QPixmap,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -23,7 +34,7 @@ from PySide6.QtWidgets import (
 from .. import APP_NAME
 from ..app import AUTO_PORT, SIMULATOR_PORT, MacropadApp
 from ..core import autostart, icons
-from ..core.models import Profile
+from ..core.models import Action, Profile
 from ..device import protocol
 from ..device.link import available_ports
 from .action_editor import ActionEditorDialog
@@ -41,6 +52,8 @@ class MainWindow(QMainWindow):
         self._editing_profile_id: str | None = core.store.active_profile_id
         self._settings_dialog: SettingsDialog | None = None
         self._simulator_window: SimulatorWindow | None = None
+        # Ação copiada pelo menu de contexto da grade, para colar em outra tecla.
+        self._clipboard_action: Action | None = None
 
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(_app_icon())
@@ -95,9 +108,10 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self._grid_title, alignment=Qt.AlignHCenter)
         self._grid = KeyGrid()
         self._grid.key_clicked.connect(self._on_key_clicked)
+        self._grid.key_menu_requested.connect(self._on_key_menu)
         right_layout.addWidget(self._grid, stretch=1)
 
-        splitter = QSplitter()
+        self._splitter = splitter = QSplitter()
         splitter.addWidget(self._profile_panel)
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 0)
@@ -119,8 +133,30 @@ class MainWindow(QMainWindow):
         )
         core.bridge.profile_changed.connect(self._on_active_profile_changed)
 
+        # ---------------------------------------------------------- atalhos
+        QShortcut(QKeySequence("Ctrl+,"), self, self._open_settings)
+        QShortcut(QKeySequence("F5"), self, self._reload_ports)
+
+        self._restore_layout()
         self._refresh_all()
         self._start_initial_link()
+
+    # -------------------------------------------------------------- layout
+
+    def _restore_layout(self) -> None:
+        """Recupera posição, tamanho e divisão da sessão anterior."""
+        settings = QSettings()
+        geometry = settings.value("janela/geometria")
+        if geometry is not None:
+            self.restoreGeometry(geometry)
+        splitter_state = settings.value("janela/divisor")
+        if splitter_state is not None:
+            self._splitter.restoreState(splitter_state)
+
+    def _save_layout(self) -> None:
+        settings = QSettings()
+        settings.setValue("janela/geometria", self.saveGeometry())
+        settings.setValue("janela/divisor", self._splitter.saveState())
 
     # ------------------------------------------------------------- bandeja
 
@@ -130,11 +166,17 @@ class MainWindow(QMainWindow):
         menu = QMenu()
         open_action = QAction("Abrir configurador", menu)
         open_action.triggered.connect(self.show_from_tray)
-        quit_action = QAction("Sair", menu)
-        quit_action.triggered.connect(self.quit_app)
         menu.addAction(open_action)
         menu.addSeparator()
+        # O aplicativo passa a maior parte do tempo oculto na bandeja: trocar
+        # de perfil daqui evita ter que reabrir a janela.
+        self._tray_profiles_menu = menu.addMenu("Trocar perfil")
+        menu.addSeparator()
+        quit_action = QAction("Sair", menu)
+        quit_action.triggered.connect(self.quit_app)
         menu.addAction(quit_action)
+        # A referência precisa sobreviver: o QMenu não tem pai.
+        self._tray_menu = menu
         self._tray.setContextMenu(menu)
         self._tray.activated.connect(
             lambda reason: self.show_from_tray()
@@ -217,6 +259,9 @@ class MainWindow(QMainWindow):
         if dialog is not None and dialog.capturing_mode_key:
             dialog.key_captured(key)
             return
+        # Acende a tecla na grade: confirma visualmente que o dispositivo
+        # chegou até o software, mesmo quando a ação não tem efeito visível.
+        self._grid.flash(key)
         self.statusBar().showMessage(f"Tecla {key + 1} pressionada", 1500)
 
     def _on_active_profile_changed(self, profile: Profile) -> None:
@@ -249,6 +294,65 @@ class MainWindow(QMainWindow):
         self._core.store.save()
         self._refresh_grid()
 
+    def _on_key_menu(self, key: int) -> None:
+        """Menu de contexto da tecla: operações rápidas sem abrir o editor."""
+        profile = self._core.store.profile_by_id(self._editing_profile_id)
+        if profile is None:
+            return
+        if key == self._core.store.settings.mode_key:
+            self.statusBar().showMessage(
+                "Esta é a tecla de modo — altere em Configurações para reutilizá-la.",
+                5000,
+            )
+            return
+
+        action = profile.action_for(key)
+        menu = QMenu(self)
+
+        editar = menu.addAction("Editar…")
+        testar = menu.addAction("Testar (3 s)")
+        menu.addSeparator()
+        copiar = menu.addAction("Copiar ação")
+        colar = menu.addAction("Colar ação")
+        menu.addSeparator()
+        limpar = menu.addAction("Limpar tecla")
+
+        for item in (testar, copiar, limpar):
+            item.setEnabled(action is not None)
+        colar.setEnabled(self._clipboard_action is not None)
+
+        chosen = menu.exec(QCursor.pos())
+        if chosen is None:
+            return
+        if chosen is editar:
+            self._on_key_clicked(key)
+        elif chosen is testar and action is not None:
+            self._test_action(action)
+        elif chosen is copiar and action is not None:
+            self._clipboard_action = copy.deepcopy(action)
+            self.statusBar().showMessage(
+                f"Ação da tecla {key + 1} copiada.", 3000
+            )
+        elif chosen is colar and self._clipboard_action is not None:
+            profile.bindings[key] = copy.deepcopy(self._clipboard_action)
+            self._core.store.save()
+            self._refresh_grid()
+        elif chosen is limpar:
+            profile.bindings.pop(key, None)
+            self._core.store.save()
+            self._refresh_grid()
+
+    def _test_action(self, action: Action) -> None:
+        """Executa a ação após um intervalo, como faz o editor.
+
+        O atraso existe para o usuário levar o foco à janela alvo: um
+        atalho como Ctrl+C iria para o configurador se disparasse já.
+        """
+        self.statusBar().showMessage(
+            "Executando em 3 segundos — leve o foco à janela alvo…", 3000
+        )
+        QTimer.singleShot(3000, lambda: self._core.runner.submit(action))
+
     def _open_settings(self) -> None:
         dialog = SettingsDialog(self, self._core.store.settings)
         self._settings_dialog = dialog
@@ -270,6 +374,24 @@ class MainWindow(QMainWindow):
         self._profile_panel.refresh()
         self._refresh_grid()
         self._refresh_preview()
+        self._refresh_tray_profiles()
+
+    def _refresh_tray_profiles(self) -> None:
+        """Reconstrói o submenu de perfis da bandeja."""
+        menu = self._tray_profiles_menu
+        menu.clear()
+        profiles = self._core.store.profiles
+        menu.setEnabled(bool(profiles))
+        active_id = self._core.store.active_profile_id
+        for profile in profiles:
+            action = menu.addAction(profile.name)
+            action.setCheckable(True)
+            action.setChecked(profile.id == active_id)
+            action.triggered.connect(
+                lambda _checked=False, pid=profile.id: (
+                    self._core.controller.activate_profile(pid)
+                )
+            )
 
     def _refresh_grid(self) -> None:
         profile = self._core.store.profile_by_id(self._editing_profile_id)
@@ -298,6 +420,9 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------ ciclo
 
     def closeEvent(self, event) -> None:  # noqa: N802 — API Qt
+        # Nos dois caminhos (esconder ou sair) o layout atual é o que o
+        # usuário quer reencontrar na próxima abertura.
+        self._save_layout()
         if not self._quitting and self._tray.isVisible():
             # Fechar a janela apenas esconde: o macropad continua funcionando.
             event.ignore()

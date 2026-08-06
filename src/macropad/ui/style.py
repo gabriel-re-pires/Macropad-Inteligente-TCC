@@ -46,6 +46,12 @@ QPushButton#keyButton[modeKey="true"] {
     border-color: #7a5c33;
     font-weight: bold;
 }
+/* Tecla pressionada no dispositivo: vence as demais por vir depois. */
+QPushButton#keyButton[pressed="true"] {
+    background-color: #1d7f94;
+    border-color: #8cebff;
+    color: #ffffff;
+}
 QListWidget, QLineEdit, QPlainTextEdit, QComboBox {
     background-color: #1b202c;
     border: 1px solid #2b3242;

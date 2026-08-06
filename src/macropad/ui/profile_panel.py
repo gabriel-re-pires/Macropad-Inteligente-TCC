@@ -10,6 +10,7 @@ from __future__ import annotations
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QFileDialog,
     QHBoxLayout,
     QInputDialog,
@@ -45,10 +46,16 @@ class ProfilePanel(QWidget):
         self._list.itemDoubleClicked.connect(
             lambda item: self.activate_requested.emit(item.data(Qt.UserRole))
         )
+        # Arrastar reordena a lista — e a ordem da lista é a ordem em que a
+        # tecla de modo percorre os perfis.
+        self._list.setDragDropMode(QAbstractItemView.InternalMove)
+        self._list.setDefaultDropAction(Qt.MoveAction)
+        self._list.model().rowsMoved.connect(self._on_rows_moved)
         layout.addWidget(self._list, stretch=1)
 
         hint = QLabel(
-            "Clique duplo ativa o perfil.\nA tecla de modo segue a ordem da lista."
+            "Clique duplo ativa o perfil. Arraste para reordenar.\n"
+            "A tecla de modo segue a ordem da lista."
         )
         hint.setObjectName("hint")
         hint.setWordWrap(True)
@@ -123,6 +130,21 @@ class ProfilePanel(QWidget):
     def _on_selection(self, current: QListWidgetItem | None, _prev=None) -> None:
         if current is not None:
             self.profile_selected.emit(current.data(Qt.UserRole))
+
+    def _on_rows_moved(self, *_args) -> None:
+        """Persiste a nova ordem depois de um arrastar-e-soltar."""
+        ordem = [
+            self._list.item(i).data(Qt.UserRole) for i in range(self._list.count())
+        ]
+        por_id = {p.id: p for p in self._store.profiles}
+        reordenados = [por_id[pid] for pid in ordem if pid in por_id]
+        # Rede de segurança: nenhum perfil pode sumir por não estar na lista.
+        vistos = set(ordem)
+        reordenados += [p for p in self._store.profiles if p.id not in vistos]
+
+        self._store.profiles = reordenados
+        self._store.save()
+        self.profiles_changed.emit()
 
     def _new(self) -> None:
         name, ok = QInputDialog.getText(self, "Novo perfil", "Nome do perfil:")
