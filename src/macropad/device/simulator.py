@@ -26,8 +26,24 @@ class SimulatorLink:
         self._on_message = on_message
         self._on_state = on_state
         self._connected = False
-        # Callback registrado pela janela do simulador para refletir o display.
-        self.on_display: Callable[[dict[str, Any]], None] | None = None
+        self._on_display: Callable[[dict[str, Any]], None] | None = None
+        # Último frame recebido do host. O dispositivo real mantém na tela
+        # o que lhe foi enviado, então o simulador também precisa guardá-lo:
+        # a janela costuma ser criada depois de o enlace iniciar e perderia
+        # o primeiro frame (o do perfil ativo, enviado em resposta ao hello).
+        self._last_display: dict[str, Any] | None = None
+
+    @property
+    def on_display(self) -> Callable[[dict[str, Any]], None] | None:
+        """Callback da janela do simulador que desenha o display."""
+        return self._on_display
+
+    @on_display.setter
+    def on_display(self, callback: Callable[[dict[str, Any]], None] | None) -> None:
+        self._on_display = callback
+        # Uma janela que abre agora deve ver o que já está "na tela".
+        if callback is not None and self._last_display is not None:
+            callback(self._last_display)
 
     def start(self) -> None:
         self._connected = True
@@ -52,8 +68,13 @@ class SimulatorLink:
 
     def send(self, message: dict[str, Any]) -> None:
         """Mensagens host->dispositivo viram atualizações do display virtual."""
-        if self.on_display and message.get("t") in ("text", "img"):
-            self.on_display(message)
+        if message.get("t") not in ("text", "img"):
+            return
+        # Guarda antes de desenhar: o frame precisa sobreviver mesmo que
+        # ainda não haja janela conectada.
+        self._last_display = message
+        if self._on_display is not None:
+            self._on_display(message)
 
     # ------------------------------------------------- lado "hardware"
 

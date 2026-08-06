@@ -8,9 +8,12 @@ sem alterar o modelo (padrão Strategy + Registry, ver ``actions/``).
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 # Layout físico do macropad (18 teclas: 3 linhas x 6 colunas).
 KEY_COUNT = 18
@@ -78,16 +81,44 @@ class Profile:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Profile:
+        """Reconstrói o perfil. Lança ``KeyError`` se não houver nome.
+
+        Teclas e apps inválidos são descartados individualmente: um dado
+        corrompido não deve custar o perfil inteiro.
+        """
+        name = data["name"]
         return cls(
-            name=data["name"],
+            name=name,
             id=data.get("id") or uuid.uuid4().hex,
             icon_path=data.get("icon_path"),
-            bindings={
-                int(k): Action.from_dict(a)
-                for k, a in data.get("bindings", {}).items()
-            },
-            auto_apps=[str(a).lower() for a in data.get("auto_apps", [])],
+            bindings=_bindings_from_dict(data.get("bindings"), name),
+            auto_apps=_auto_apps_from_dict(data.get("auto_apps"), name),
         )
+
+
+def _bindings_from_dict(raw: Any, profile_name: Any) -> dict[int, Action]:
+    if not isinstance(raw, dict):
+        return {}
+    bindings: dict[int, Action] = {}
+    for key, action in raw.items():
+        try:
+            bindings[int(key)] = Action.from_dict(action)
+        except (KeyError, TypeError, ValueError):
+            log.warning(
+                "perfil %r: tecla %r descartada (definição inválida)",
+                profile_name,
+                key,
+            )
+    return bindings
+
+
+def _auto_apps_from_dict(raw: Any, profile_name: Any) -> list[str]:
+    # Uma string aqui seria iterada caractere a caractere; só lista serve.
+    if not isinstance(raw, list):
+        if raw is not None:
+            log.warning("perfil %r: apps vinculados descartados", profile_name)
+        return []
+    return [str(app).lower() for app in raw]
 
 
 @dataclass

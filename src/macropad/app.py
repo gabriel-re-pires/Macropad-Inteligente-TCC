@@ -34,6 +34,9 @@ class MacropadApp:
         self.store.load()
 
         self.bridge = DeviceBridge()
+        # Falhas ao gravar a configuração aparecem na barra de status, pelo
+        # mesmo canal já usado pelos erros de ação.
+        self.store.on_error = self.bridge.action_error.emit
         self.runner = ActionRunner(
             context=ActionContext(
                 settings=self.store.settings,

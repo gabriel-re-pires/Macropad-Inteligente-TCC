@@ -10,14 +10,19 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import shutil
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from .models import Action, Profile, Settings
 
 _CONFIG_FILE = "config.json"
+
+log = logging.getLogger(__name__)
 
 
 def default_data_dir() -> Path:
@@ -37,34 +42,66 @@ class Store:
         self.settings = Settings()
         self.profiles: list[Profile] = []
         self.active_profile_id: str | None = None
+        # Definido pela raiz de composição para levar falhas de gravação à
+        # interface; sem ele, restam apenas as mensagens no log.
+        self.on_error: Callable[[str], None] | None = None
 
     # ------------------------------------------------------------------ IO
 
     def load(self) -> None:
+        """Carrega a configuração, aproveitando o máximo possível.
+
+        Um arquivo parcialmente corrompido não deve custar todos os perfis
+        do usuário: cada perfil inválido é descartado isoladamente e o
+        arquivo original é preservado em ``.json.bak`` sempre que algo se
+        perde. Falhar aqui nunca impede o aplicativo de abrir.
+        """
         path = self.data_dir / _CONFIG_FILE
         if not path.exists():
             self._create_default()
             return
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            # Arquivo corrompido: preserva uma cópia e recomeça do zero.
-            # Se nem a cópia for possível, ainda assim é melhor abrir com a
-            # configuração padrão do que impedir o uso do aplicativo.
-            with contextlib.suppress(OSError):
-                shutil.copy(path, path.with_suffix(".json.bak"))
+        except (json.JSONDecodeError, OSError) as exc:
+            log.warning("configuração ilegível (%s); recomeçando do padrão", exc)
+            self._backup(path)
             self._create_default()
             return
-        self.settings = Settings.from_dict(data.get("settings", {}))
-        self.profiles = [Profile.from_dict(p) for p in data.get("profiles", [])]
-        self.active_profile_id = data.get("active_profile_id")
+        if not isinstance(data, dict):
+            log.warning("configuração não é um objeto JSON; recomeçando do padrão")
+            self._backup(path)
+            self._create_default()
+            return
+
+        self.settings, settings_ok = _settings_from_dict(data.get("settings"))
+        self.profiles, discarded = _profiles_from_dict(data.get("profiles"))
+        if not settings_ok or discarded:
+            self._backup(path)
+
+        active = data.get("active_profile_id")
+        self.active_profile_id = active if isinstance(active, str) else None
         if not self.profiles:
             self._create_default_profile()
         if self.active_profile_id not in {p.id for p in self.profiles}:
             self.active_profile_id = self.profiles[0].id
 
-    def save(self) -> None:
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+    def _backup(self, path: Path) -> None:
+        """Preserva o arquivo original antes de sobrescrevê-lo.
+
+        Se nem a cópia for possível, ainda é melhor abrir o aplicativo do
+        que impedir seu uso.
+        """
+        with contextlib.suppress(OSError):
+            shutil.copy(path, path.with_suffix(".json.bak"))
+
+    def save(self) -> bool:
+        """Grava a configuração de forma atômica. ``False`` se não conseguiu.
+
+        Chamado a cada troca de perfil (inclusive pela tecla de modo), então
+        uma falha de disco não pode derrubar o aplicativo: é registrada e
+        reportada, e o macropad continua funcionando com o estado em
+        memória.
+        """
         data = {
             "settings": self.settings.to_dict(),
             "active_profile_id": self.active_profile_id,
@@ -72,8 +109,21 @@ class Store:
         }
         path = self.data_dir / _CONFIG_FILE
         tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(path)
+        try:
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            tmp.replace(path)
+        except OSError as exc:
+            log.error("falha ao salvar %s: %s", path, exc)
+            # Não deixa para trás um arquivo temporário pela metade.
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
+            if self.on_error is not None:
+                self.on_error(f"não foi possível salvar as configurações: {exc}")
+            return False
+        return True
 
     def _create_default(self) -> None:
         self.settings = Settings()
@@ -139,3 +189,39 @@ class Store:
         profile.icon_path = str(dest)
         self.save()
         return str(dest)
+
+
+# ------------------------------------------------- desserialização tolerante
+
+
+def _settings_from_dict(raw: Any) -> tuple[Settings, bool]:
+    """Devolve (configurações, ``True`` se vieram intactas do arquivo)."""
+    if raw is None:
+        return Settings(), True
+    if not isinstance(raw, dict):
+        log.warning("bloco 'settings' inválido; usando os padrões")
+        return Settings(), False
+    try:
+        return Settings.from_dict(raw), True
+    except (TypeError, ValueError) as exc:
+        log.warning("configurações inválidas (%s); usando os padrões", exc)
+        return Settings(), False
+
+
+def _profiles_from_dict(raw: Any) -> tuple[list[Profile], int]:
+    """Devolve (perfis válidos, quantidade descartada)."""
+    if raw is None:
+        return [], 0
+    if not isinstance(raw, list):
+        log.warning("bloco 'profiles' inválido; nenhum perfil carregado")
+        return [], 1
+
+    profiles: list[Profile] = []
+    discarded = 0
+    for index, item in enumerate(raw):
+        try:
+            profiles.append(Profile.from_dict(item))
+        except (KeyError, TypeError, ValueError) as exc:
+            discarded += 1
+            log.warning("perfil na posição %d descartado (%s)", index, exc)
+    return profiles, discarded
