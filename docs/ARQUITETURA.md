@@ -100,10 +100,15 @@ o que permite testá-la isoladamente (18 testes em `tests/`).
 - A ação "Executar comando" roda o que o **próprio usuário** configurou,
   com os privilégios dele — equivalente a digitar no terminal. Perfis
   recebidos de terceiros devem ser revisados antes de importados.
-- O token do Home Assistant fica em texto no arquivo de configuração
-  local. Recomenda-se um token exclusivo para o macropad (revogável no
-  painel do HA). Um aprimoramento futuro é usar o Credential Manager do
-  Windows via `keyring`.
+- O token do Home Assistant e a senha do OBS ficam no **Credential
+  Manager do Windows** (`keyring`), não no `config.json` — ver
+  `core/secrets.py`. Uma configuração antiga com os valores em texto é
+  migrada para o cofre na primeira gravação. Se não houver cofre
+  disponível, o valor permanece no arquivo e o fato é registrado no log:
+  perder a configuração do usuário seria pior. Ainda assim, recomenda-se
+  um token exclusivo para o macropad (revogável no painel do HA).
+- O `Store` recebe o cofre por injeção (`vault=`), o que mantém os testes
+  fora das credenciais reais do usuário.
 
 ## Como estender
 

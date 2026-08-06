@@ -1,0 +1,1 @@
+"""Testes do Macropad Configurator."""

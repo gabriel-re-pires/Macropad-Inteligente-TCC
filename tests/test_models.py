@@ -7,6 +7,8 @@ from pathlib import Path
 from macropad.core.models import Action, Profile, Settings
 from macropad.core.store import Store
 
+from .apoio import CofreFalso
+
 
 class ModelsTest(unittest.TestCase):
     def test_action_roundtrip(self):
@@ -28,7 +30,7 @@ class ModelsTest(unittest.TestCase):
 class StoreTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.store = Store(data_dir=Path(self._tmp.name))
+        self.store = Store(data_dir=Path(self._tmp.name), vault=CofreFalso())
         self.store.load()
 
     def tearDown(self):
@@ -43,7 +45,7 @@ class StoreTest(unittest.TestCase):
         profile.bindings[0] = Action(type="media", params={"control": "volume_up"})
         self.store.save()
 
-        reloaded = Store(data_dir=Path(self._tmp.name))
+        reloaded = Store(data_dir=Path(self._tmp.name), vault=CofreFalso())
         reloaded.load()
         names = [p.name for p in reloaded.profiles]
         self.assertIn("Streaming", names)
@@ -61,7 +63,7 @@ class StoreTest(unittest.TestCase):
     def test_corrupted_config_recovers(self):
         config = Path(self._tmp.name) / "config.json"
         config.write_text("{quebrado", encoding="utf-8")
-        store = Store(data_dir=Path(self._tmp.name))
+        store = Store(data_dir=Path(self._tmp.name), vault=CofreFalso())
         store.load()  # não deve lançar exceção
         self.assertGreaterEqual(len(store.profiles), 1)
 

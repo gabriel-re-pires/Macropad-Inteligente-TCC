@@ -8,6 +8,8 @@ from macropad.core.controller import Controller
 from macropad.core.models import Action
 from macropad.core.store import Store
 
+from .apoio import CofreFalso
+
 
 class FakeRunner:
     def __init__(self):
@@ -20,7 +22,7 @@ class FakeRunner:
 class ControllerTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.store = Store(data_dir=Path(self._tmp.name))
+        self.store = Store(data_dir=Path(self._tmp.name), vault=CofreFalso())
         self.store.load()
         self.store.settings.mode_key = 17
 

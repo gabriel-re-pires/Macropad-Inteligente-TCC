@@ -16,13 +16,27 @@ import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
+from . import secrets
 from .models import Action, Profile, Settings
 
 _CONFIG_FILE = "config.json"
 
+# Campos de Settings que não devem ficar legíveis no config.json.
+_SECRET_FIELDS = ("ha_token", "obs_password")
+
 log = logging.getLogger(__name__)
+
+
+class SecretVault(Protocol):
+    """Cofre de credenciais (ver :mod:`macropad.core.secrets`).
+
+    Injetável para que os testes não toquem no Credential Manager real.
+    """
+
+    def store(self, name: str, value: str) -> bool: ...
+    def load(self, name: str) -> str: ...
 
 
 def default_data_dir() -> Path:
@@ -36,8 +50,13 @@ def default_data_dir() -> Path:
 class Store:
     """Carrega e salva o estado do aplicativo de forma atômica."""
 
-    def __init__(self, data_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        data_dir: Path | None = None,
+        vault: SecretVault | None = None,
+    ) -> None:
         self.data_dir = data_dir or default_data_dir()
+        self._vault: SecretVault = vault if vault is not None else secrets
         self.icons_dir = self.data_dir / "icons"
         self.settings = Settings()
         self.profiles: list[Profile] = []
@@ -78,12 +97,39 @@ class Store:
         if not settings_ok or discarded:
             self._backup(path)
 
+        self._load_secrets()
+
         active = data.get("active_profile_id")
         self.active_profile_id = active if isinstance(active, str) else None
         if not self.profiles:
             self._create_default_profile()
         if self.active_profile_id not in {p.id for p in self.profiles}:
             self.active_profile_id = self.profiles[0].id
+
+    # ---------------------------------------------------------- segredos
+
+    def _load_secrets(self) -> None:
+        """Completa as credenciais a partir do cofre do sistema.
+
+        Um valor ainda presente no arquivo (instalação anterior à mudança)
+        tem precedência e é migrado para o cofre no próximo ``save()``.
+        """
+        for campo in _SECRET_FIELDS:
+            if not getattr(self.settings, campo):
+                setattr(self.settings, campo, self._vault.load(campo))
+
+    def _store_secrets(self, data: dict[str, Any]) -> None:
+        """Move as credenciais do dicionário a salvar para o cofre.
+
+        O que for guardado no cofre sai do JSON; o que não puder ser
+        guardado continua no arquivo, para não perder a configuração.
+        """
+        settings_data = data.get("settings")
+        if not isinstance(settings_data, dict):
+            return
+        for campo in _SECRET_FIELDS:
+            if self._vault.store(campo, getattr(self.settings, campo)):
+                settings_data[campo] = ""
 
     def _backup(self, path: Path) -> None:
         """Preserva o arquivo original antes de sobrescrevê-lo.
@@ -102,11 +148,12 @@ class Store:
         reportada, e o macropad continua funcionando com o estado em
         memória.
         """
-        data = {
+        data: dict[str, Any] = {
             "settings": self.settings.to_dict(),
             "active_profile_id": self.active_profile_id,
             "profiles": [p.to_dict() for p in self.profiles],
         }
+        self._store_secrets(data)
         path = self.data_dir / _CONFIG_FILE
         tmp = path.with_suffix(".json.tmp")
         try:

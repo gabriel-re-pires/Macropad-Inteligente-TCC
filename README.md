@@ -54,7 +54,7 @@ funciona de forma idêntica.
 ## Testes
 
 ```powershell
-.venv\Scripts\python -m unittest discover -s tests -v
+.venv\Scripts\python -m unittest discover -t . -v
 ```
 
 ## Qualidade de código

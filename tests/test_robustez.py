@@ -22,6 +22,8 @@ from macropad.device import protocol
 from macropad.device.link import SerialLink
 from macropad.device.simulator import SimulatorLink
 
+from .apoio import CofreFalso
+
 
 class DisplayReplayTest(unittest.TestCase):
     """A janela do simulador abria mostrando o texto de boot ("macropad")
@@ -95,7 +97,7 @@ class ConfiguracaoCorrompidaTest(unittest.TestCase):
 
     def _carregar(self, data) -> Store:
         self.config.write_text(json.dumps(data), encoding="utf-8")
-        store = Store(data_dir=self.dir)
+        store = Store(data_dir=self.dir, vault=CofreFalso())
         store.load()
         return store
 
@@ -176,7 +178,7 @@ class FalhaAoSalvarTest(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.store = Store(data_dir=Path(self._tmp.name))
+        self.store = Store(data_dir=Path(self._tmp.name), vault=CofreFalso())
         self.store.load()
         logging.disable(logging.CRITICAL)
 
@@ -220,6 +222,88 @@ class FalhaAoSalvarTest(unittest.TestCase):
 
     def test_salvar_com_sucesso_devolve_true(self):
         self.assertTrue(self.store.save())
+
+
+class SegredosNoCofreTest(unittest.TestCase):
+    """O token do Home Assistant e a senha do OBS ficavam legíveis no
+    config.json. Passam a viver no cofre do sistema, com migração do que
+    já existia e retorno ao arquivo se não houver cofre disponível.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self._tmp.name)
+        self.config = self.dir / "config.json"
+        logging.disable(logging.CRITICAL)
+
+    def tearDown(self):
+        logging.disable(logging.NOTSET)
+        self._tmp.cleanup()
+
+    def _json_salvo(self) -> dict:
+        return json.loads(self.config.read_text(encoding="utf-8"))
+
+    def test_segredos_saem_do_arquivo_e_vao_para_o_cofre(self):
+        cofre = CofreFalso()
+        store = Store(data_dir=self.dir, vault=cofre)
+        store.load()
+        store.settings.ha_token = "token-secreto"
+        store.settings.obs_password = "senha-secreta"
+        store.save()
+
+        salvo = self._json_salvo()["settings"]
+        self.assertEqual(salvo["ha_token"], "")
+        self.assertEqual(salvo["obs_password"], "")
+        self.assertEqual(cofre.guardados["ha_token"], "token-secreto")
+        self.assertEqual(cofre.guardados["obs_password"], "senha-secreta")
+
+    def test_segredos_voltam_do_cofre_ao_recarregar(self):
+        cofre = CofreFalso()
+        store = Store(data_dir=self.dir, vault=cofre)
+        store.load()
+        store.settings.ha_token = "token-secreto"
+        store.save()
+
+        recarregado = Store(data_dir=self.dir, vault=cofre)
+        recarregado.load()
+        self.assertEqual(recarregado.settings.ha_token, "token-secreto")
+
+    def test_config_antiga_em_texto_claro_e_migrada(self):
+        # Instalação anterior à mudança: o token está no arquivo.
+        self.config.write_text(
+            json.dumps({"settings": {"ha_token": "token-antigo"}}), encoding="utf-8"
+        )
+        cofre = CofreFalso()
+        store = Store(data_dir=self.dir, vault=cofre)
+        store.load()
+
+        self.assertEqual(store.settings.ha_token, "token-antigo")
+        store.save()
+
+        self.assertEqual(cofre.guardados["ha_token"], "token-antigo")
+        self.assertEqual(self._json_salvo()["settings"]["ha_token"], "")
+
+    def test_sem_cofre_disponivel_o_segredo_fica_no_arquivo(self):
+        # Sem backend, perder a configuração seria pior que mantê-la legível.
+        cofre = CofreFalso(disponivel=False)
+        store = Store(data_dir=self.dir, vault=cofre)
+        store.load()
+        store.settings.ha_token = "token-secreto"
+        store.save()
+
+        self.assertEqual(self._json_salvo()["settings"]["ha_token"], "token-secreto")
+
+    def test_apagar_o_segredo_remove_do_cofre(self):
+        cofre = CofreFalso()
+        store = Store(data_dir=self.dir, vault=cofre)
+        store.load()
+        store.settings.ha_token = "token-secreto"
+        store.save()
+
+        store.settings.ha_token = ""
+        store.save()
+
+        self.assertNotIn("ha_token", cofre.guardados)
 
 
 class FilaDeAcoesTest(unittest.TestCase):
