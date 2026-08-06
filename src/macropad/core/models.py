@@ -40,7 +40,7 @@ class Action:
         return {"type": self.type, "params": self.params, "label": self.label}
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Action":
+    def from_dict(cls, data: dict[str, Any]) -> Action:
         return cls(
             type=data["type"],
             params=dict(data.get("params", {})),
@@ -77,7 +77,7 @@ class Profile:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Profile":
+    def from_dict(cls, data: dict[str, Any]) -> Profile:
         return cls(
             name=data["name"],
             id=data.get("id") or uuid.uuid4().hex,
@@ -124,7 +124,7 @@ class Settings:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Settings":
+    def from_dict(cls, data: dict[str, Any]) -> Settings:
         return cls(
             mode_key=data.get("mode_key"),
             serial_port=data.get("serial_port"),

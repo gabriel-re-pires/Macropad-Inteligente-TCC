@@ -36,8 +36,10 @@ def run_hotkey(params: dict[str, Any], ctx: ActionContext) -> None:
         resolved = [keys.resolve(n) for n in names]
     except ValueError as exc:
         raise ActionError(str(exc)) from exc
-    modifiers = [k for k, n in zip(resolved, names) if n.lower() in keys.MODIFIERS]
-    others = [k for k, n in zip(resolved, names) if n.lower() not in keys.MODIFIERS]
+    # strict=True: resolved vem de names, então têm o mesmo comprimento.
+    pares = list(zip(resolved, names, strict=True))
+    modifiers = [k for k, n in pares if n.lower() in keys.MODIFIERS]
+    others = [k for k, n in pares if n.lower() not in keys.MODIFIERS]
     for mod in modifiers:
         _keyboard.press(mod)
     try:
@@ -91,7 +93,9 @@ def run_command(params: dict[str, Any], ctx: ActionContext) -> None:
         # na sua máquina (equivalente a digitá-lo no terminal) e pode conter
         # pipes/&&; não há entrada de terceiros aqui. Perfis importados de
         # fontes externas devem ser revisados (ver docs/ARQUITETURA.md).
-        subprocess.Popen(command, shell=True, cwd=cwd, creationflags=creationflags)
+        subprocess.Popen(  # noqa: S602 — shell=True intencional, ver acima
+            command, shell=True, cwd=cwd, creationflags=creationflags
+        )
     except OSError as exc:
         raise ActionError(f"falha ao executar comando: {exc}") from exc
 
@@ -119,7 +123,9 @@ def run_launch(params: dict[str, Any], ctx: ActionContext) -> None:
             raise ActionError(f"falha ao abrir {target!r}: {exc}") from exc
     if not path.exists():
         raise ActionError(f"alvo não encontrado: {target!r}")
-    subprocess.Popen(["xdg-open", str(path)])
+    # "xdg-open" é o utilitário padrão do sistema e o alvo foi escolhido
+    # pelo usuário no seletor de arquivos.
+    subprocess.Popen(["xdg-open", str(path)])  # noqa: S603, S607
 
 
 @register(

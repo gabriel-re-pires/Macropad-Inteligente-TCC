@@ -9,7 +9,8 @@ banca do TCC.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from ..core.models import KEY_COUNT, SCREEN_H, SCREEN_W
 

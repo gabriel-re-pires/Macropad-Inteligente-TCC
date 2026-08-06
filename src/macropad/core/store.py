@@ -8,6 +8,7 @@ o arquivo original seja movido.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -48,10 +49,10 @@ class Store:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             # Arquivo corrompido: preserva uma cópia e recomeça do zero.
-            try:
+            # Se nem a cópia for possível, ainda assim é melhor abrir com a
+            # configuração padrão do que impedir o uso do aplicativo.
+            with contextlib.suppress(OSError):
                 shutil.copy(path, path.with_suffix(".json.bak"))
-            except OSError:
-                pass
             self._create_default()
             return
         self.settings = Settings.from_dict(data.get("settings", {}))
@@ -120,10 +121,10 @@ class Store:
     def next_profile(self) -> Profile:
         """Perfil seguinte na ordem da lista (usado pela tecla de modo)."""
         ids = [p.id for p in self.profiles]
-        try:
-            idx = ids.index(self.active_profile_id)
-        except ValueError:
-            idx = -1
+        current = self.active_profile_id
+        # Sem perfil ativo (ou apontando para um já excluído): começa do
+        # primeiro da lista.
+        idx = ids.index(current) if current in ids else -1
         profile = self.profiles[(idx + 1) % len(self.profiles)]
         self.active_profile_id = profile.id
         self.save()

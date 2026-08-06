@@ -7,6 +7,7 @@ bandeja, sem janela). Sem privilégios de administrador.
 
 from __future__ import annotations
 
+import contextlib
 import sys
 from pathlib import Path
 
@@ -33,10 +34,9 @@ def apply(enabled: bool) -> None:
         if enabled:
             winreg.SetValueEx(key, _VALUE_NAME, 0, winreg.REG_SZ, _command())
         else:
-            try:
+            # Já ausente da chave Run: desabilitar é idempotente.
+            with contextlib.suppress(FileNotFoundError):
                 winreg.DeleteValue(key, _VALUE_NAME)
-            except FileNotFoundError:
-                pass
 
 
 def is_enabled() -> bool:

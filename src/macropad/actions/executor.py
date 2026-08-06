@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import queue
 import threading
-from typing import Callable
+from collections.abc import Callable
 
 from ..core.models import Action
 from . import builtin  # noqa: F401 — registra os tipos embutidos

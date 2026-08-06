@@ -20,10 +20,12 @@ from ..core.models import SCREEN_H, SCREEN_W
 _SCALE = 2  # fator de ampliação do preview
 
 
-def _font(size: int) -> ImageFont.ImageFont:
+def _font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     try:
         return ImageFont.truetype("arial.ttf", size)
     except OSError:
+        # Sem a fonte do sistema: a embutida do Pillow tem tamanho fixo,
+        # mas o preview continua legível.
         return ImageFont.load_default()
 
 
@@ -35,13 +37,14 @@ def render_text_frame(lines: list[str]) -> Image.Image:
     size = 22 if len(lines) == 1 else 14
     font = _font(size)
     total_h = 0
-    heights = []
+    heights: list[int] = []
     for ln in lines:
         box = draw.textbbox((0, 0), ln, font=font)
-        heights.append(box[3] - box[1])
-        total_h += box[3] - box[1] + 4
-    y = max((SCREEN_H - total_h) // 2, 0)
-    for ln, h in zip(lines, heights):
+        # textbbox devolve float; as posições no display são em pixels.
+        heights.append(int(box[3] - box[1]))
+        total_h += int(box[3] - box[1]) + 4
+    y: int = max((SCREEN_H - total_h) // 2, 0)
+    for ln, h in zip(lines, heights, strict=True):
         box = draw.textbbox((0, 0), ln, font=font)
         w = box[2] - box[0]
         draw.text(((SCREEN_W - w) // 2 - box[0], y - box[1]), ln, fill=255, font=font)

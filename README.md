@@ -57,6 +57,29 @@ funciona de forma idêntica.
 .venv\Scripts\python -m unittest discover -s tests -v
 ```
 
+## Qualidade de código
+
+As ferramentas de desenvolvimento ficam no extra `dev`:
+
+```powershell
+.venv\Scripts\python -m pip install -e ".[dev]"
+.venv\Scripts\ruff check .     # lint (estilo, imports, armadilhas, bandit)
+.venv\Scripts\mypy             # checagem de tipos
+```
+
+Ambas são configuradas no `pyproject.toml`. As camadas de domínio
+(`core/`, `actions/`, `device/`, `integrations/`) são verificadas
+integralmente pelo mypy; em `ui/` o código `attr-defined` fica desligado
+porque o PySide6 aceita o atalho de enums (`Qt.AlignHCenter`) que suas
+stubs não declaram.
+
+## Registro de log
+
+O aplicativo roda sem console, então as mensagens vão para
+`%APPDATA%\MacropadConfigurator\logs\macropad.log` (rotativo, 512 KB × 3),
+incluindo o traceback de qualquer erro não tratado. É o primeiro lugar a
+consultar quando algo não funciona.
+
 ## Documentação
 
 - [docs/PROTOCOLO.md](docs/PROTOCOLO.md) — contrato serial host ↔ firmware

@@ -15,10 +15,13 @@ Operações oferecidas na interface:
 
 from __future__ import annotations
 
+import logging
 import threading
 from typing import Any
 
 from ..actions.base import ActionError
+
+log = logging.getLogger(__name__)
 
 OPERATION_TITLES = {
     "scene": "Trocar cena",
@@ -64,8 +67,10 @@ def _reset_client() -> None:
         try:
             if _client is not None:
                 _client.disconnect()
-        except Exception:
-            pass
+        except Exception:  # desconectar é best-effort
+            # O OBS pode já ter fechado; o cliente será recriado no
+            # próximo uso de qualquer forma.
+            log.debug("falha ao desconectar do OBS", exc_info=True)
         _client = None
 
 

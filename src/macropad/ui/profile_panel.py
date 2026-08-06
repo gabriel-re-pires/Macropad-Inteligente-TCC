@@ -47,13 +47,19 @@ class ProfilePanel(QWidget):
         )
         layout.addWidget(self._list, stretch=1)
 
-        hint = QLabel("Clique duplo ativa o perfil.\nA tecla de modo segue a ordem da lista.")
+        hint = QLabel(
+            "Clique duplo ativa o perfil.\nA tecla de modo segue a ordem da lista."
+        )
         hint.setObjectName("hint")
         hint.setWordWrap(True)
         layout.addWidget(hint)
 
         row1 = QHBoxLayout()
-        for text, slot in (("Novo", self._new), ("Renomear", self._rename), ("Excluir", self._delete)):
+        for text, slot in (
+            ("Novo", self._new),
+            ("Renomear", self._rename),
+            ("Excluir", self._delete),
+        ):
             b = QPushButton(text)
             b.clicked.connect(slot)
             row1.addWidget(b)

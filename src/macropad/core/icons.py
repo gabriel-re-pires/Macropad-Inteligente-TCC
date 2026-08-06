@@ -32,7 +32,7 @@ def load_for_oled(path: str | Path, invert: bool = False) -> Image.Image:
     background = Image.new("RGBA", img.size, (0, 0, 0, 255))
     img = Image.alpha_composite(background, img).convert("L")
 
-    img.thumbnail((SCREEN_W, SCREEN_H), Image.LANCZOS)
+    img.thumbnail((SCREEN_W, SCREEN_H), Image.Resampling.LANCZOS)
     canvas = Image.new("L", (SCREEN_W, SCREEN_H), 0)
     offset = ((SCREEN_W - img.width) // 2, (SCREEN_H - img.height) // 2)
     canvas.paste(img, offset)
@@ -48,6 +48,8 @@ def pack_bits(mono: Image.Image) -> bytes:
     if mono.size != (SCREEN_W, SCREEN_H):
         raise ValueError(f"imagem deve ter {SCREEN_W}x{SCREEN_H}, tem {mono.size}")
     pixels = mono.load()
+    if pixels is None:  # pragma: no cover — imagem válida sempre carrega
+        raise ValueError("não foi possível acessar os pixels da imagem")
     data = bytearray()
     for y in range(SCREEN_H):
         for x0 in range(0, SCREEN_W, 8):
@@ -71,6 +73,8 @@ def unpack_bits(data: bytes) -> Image.Image:
         raise ValueError(f"payload deve ter {expected} bytes, tem {len(data)}")
     mono = Image.new("1", (SCREEN_W, SCREEN_H), 0)
     pixels = mono.load()
+    if pixels is None:  # pragma: no cover — imagem recém-criada sempre carrega
+        raise ValueError("não foi possível acessar os pixels da imagem")
     i = 0
     for y in range(SCREEN_H):
         for x0 in range(0, SCREEN_W, 8):

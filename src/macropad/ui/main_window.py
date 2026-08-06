@@ -187,8 +187,10 @@ class MainWindow(QMainWindow):
             self._simulator_window = None
         if text == SIMULATOR_PORT:
             self._core.use_port(SIMULATOR_PORT)
-            self._simulator_window = SimulatorWindow(self._core.simulator)
-            self._simulator_window.show()
+            simulator = self._core.simulator
+            if simulator is not None:
+                self._simulator_window = SimulatorWindow(simulator)
+                self._simulator_window.show()
         elif text == AUTO_PORT:
             self._core.use_port(None)
         else:

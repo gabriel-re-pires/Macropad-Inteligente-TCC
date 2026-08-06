@@ -3,10 +3,11 @@
 import base64
 import unittest
 
+from PIL import Image
+
 from macropad.core import icons
 from macropad.core.models import SCREEN_H, SCREEN_W
 from macropad.device import protocol
-from PIL import Image
 
 
 class ProtocolTest(unittest.TestCase):

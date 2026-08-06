@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -96,8 +96,12 @@ class ActionEditorDialog(QDialog):
         layout.addWidget(self._status)
 
         buttons = QDialogButtonBox()
-        self._test_button = buttons.addButton("Testar (3 s)", QDialogButtonBox.ActionRole)
-        self._remove_button = buttons.addButton("Remover ação", QDialogButtonBox.DestructiveRole)
+        self._test_button = buttons.addButton(
+            "Testar (3 s)", QDialogButtonBox.ActionRole
+        )
+        self._remove_button = buttons.addButton(
+            "Remover ação", QDialogButtonBox.DestructiveRole
+        )
         buttons.addButton(QDialogButtonBox.Ok)
         buttons.addButton(QDialogButtonBox.Cancel)
         buttons.accepted.connect(self._accept)
@@ -173,7 +177,7 @@ class ActionEditorDialog(QDialog):
                 page.control_combo.addItem(title, value)
             form.addRow("Controle:", page.control_combo)
         elif name == "macro":
-            page.steps: list[dict[str, Any]] = []
+            page.steps = []  # list[dict[str, Any]] — anexado dinamicamente
             page.steps_list = QListWidget()
             form.addRow("Passos:", page.steps_list)
             buttons_row = QHBoxLayout()
@@ -482,15 +486,18 @@ class ActionEditorDialog(QDialog):
 
     def _test(self) -> None:
         action = self._collect()
-        if action is None or self._runner is None:
+        runner = self._runner
+        if action is None or runner is None:
             return
         self._status.setText(
             "Executando em 3 segundos — leve o foco à janela alvo…"
         )
         self._test_button.setEnabled(False)
 
+        # Captura o runner agora: o disparo acontece 3 s depois, fora deste
+        # escopo.
         def fire() -> None:
-            self._runner.submit(action)
+            runner.submit(action)
             self._status.setText("Ação enviada.")
             self._test_button.setEnabled(True)
 

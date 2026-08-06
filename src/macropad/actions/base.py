@@ -8,13 +8,14 @@ camada precisa mudar.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 # Assinatura de um executor: recebe os parâmetros da ação e o contexto.
 Handler = Callable[[dict[str, Any], "ActionContext"], None]
 
-_registry: dict[str, "ActionType"] = {}
+_registry: dict[str, ActionType] = {}
 
 
 @dataclass

@@ -13,14 +13,18 @@ converte em sinais Qt (ver ``ui.bridge``).
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
-from typing import Any, Callable, Protocol
+from collections.abc import Callable
+from typing import Any, Protocol
 
 import serial
 from serial.tools import list_ports
 
 from . import protocol
+
+log = logging.getLogger(__name__)
 
 
 class DeviceLink(Protocol):
@@ -164,5 +168,7 @@ class SerialLink:
         if ser is not None:
             try:
                 ser.close()
-            except Exception:
-                pass
+            except Exception:  # fechar é best-effort
+                # O cabo já pode ter sido removido; o driver lança tipos
+                # variados nesse caso e o enlace vai reconectar de todo jeito.
+                log.debug("falha ao fechar a porta serial", exc_info=True)
