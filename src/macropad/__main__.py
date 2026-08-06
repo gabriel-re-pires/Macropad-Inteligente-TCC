@@ -7,16 +7,18 @@ import sys
 
 
 def main() -> int:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(name)s %(levelname)s: %(message)s",
-    )
     from PySide6.QtWidgets import QApplication
 
-    from . import APP_NAME, ORG_NAME
+    from . import APP_NAME, ORG_NAME, __version__
     from .app import MacropadApp
+    from .core import logs
     from .ui.main_window import MainWindow
     from .ui.style import STYLESHEET
+
+    log_path = logs.setup()
+    logging.getLogger(__name__).info(
+        "%s %s iniciando (log: %s)", APP_NAME, __version__, log_path or "somente console"
+    )
 
     start_minimized = "--minimized" in sys.argv
 
