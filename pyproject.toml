@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "macropad-configurator"
+version = "0.1.0"
+description = "Software de configuração do macropad ESP32-C3 (TCC UEMG)"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Artur Morais Brasileiro" },
+    { name = "Gabriel Rezende Pires" },
+]
+dependencies = [
+    "PySide6>=6.8",
+    "pyserial>=3.5",
+    "pynput>=1.7",
+    "pillow>=10.0",
+    "requests>=2.31",
+    "obsws-python>=1.7",
+]
+
+[project.scripts]
+macropad = "macropad.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
