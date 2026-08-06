@@ -129,7 +129,7 @@ class MainWindow(QMainWindow):
         self._tray.setToolTip(APP_NAME)
         menu = QMenu()
         open_action = QAction("Abrir configurador", menu)
-        open_action.triggered.connect(self._show_from_tray)
+        open_action.triggered.connect(self.show_from_tray)
         quit_action = QAction("Sair", menu)
         quit_action.triggered.connect(self.quit_app)
         menu.addAction(open_action)
@@ -137,13 +137,14 @@ class MainWindow(QMainWindow):
         menu.addAction(quit_action)
         self._tray.setContextMenu(menu)
         self._tray.activated.connect(
-            lambda reason: self._show_from_tray()
+            lambda reason: self.show_from_tray()
             if reason == QSystemTrayIcon.Trigger
             else None
         )
         self._tray.show()
 
-    def _show_from_tray(self) -> None:
+    def show_from_tray(self) -> None:
+        """Restaura e foca a janela (bandeja ou segunda instância aberta)."""
         self.show()
         self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
         self.raise_()

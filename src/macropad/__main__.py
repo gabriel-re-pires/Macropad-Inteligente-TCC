@@ -12,6 +12,7 @@ def main() -> int:
     from . import APP_NAME, ORG_NAME, __version__
     from .app import MacropadApp
     from .core import logs
+    from .single_instance import SingleInstance
     from .ui.main_window import MainWindow
     from .ui.style import STYLESHEET
 
@@ -29,8 +30,18 @@ def main() -> int:
     # Fechar a janela minimiza para a bandeja; sair de verdade é pelo menu.
     qt_app.setQuitOnLastWindowClosed(False)
 
+    # Duas instâncias disputariam a porta serial e a bandeja: a segunda
+    # apenas pede à primeira que apareça e encerra.
+    instance = SingleInstance()
+    if not instance.try_acquire():
+        logging.getLogger(__name__).info(
+            "já existe uma instância em execução; encerrando esta"
+        )
+        return 0
+
     core = MacropadApp()
     window = MainWindow(core)
+    instance.activated.connect(window.show_from_tray)
     if not start_minimized:
         window.show()
     return qt_app.exec()
