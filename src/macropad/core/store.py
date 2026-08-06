@@ -18,7 +18,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
 
-from . import secrets
+from . import profile_io, secrets
 from .models import Action, Profile, Settings
 
 _CONFIG_FILE = "config.json"
@@ -224,6 +224,29 @@ class Store:
         idx = ids.index(current) if current in ids else -1
         profile = self.profiles[(idx + 1) % len(self.profiles)]
         self.active_profile_id = profile.id
+        self.save()
+        return profile
+
+    # ------------------------------------------------- troca de perfis
+
+    def export_profile(self, profile: Profile, destino: Path) -> None:
+        """Grava o perfil em um arquivo de troca (com o ícone embutido)."""
+        texto = profile_io.to_json(profile, profile.icon_path)
+        Path(destino).write_text(texto, encoding="utf-8")
+
+    def add_imported_profile(self, importado: profile_io.ImportedProfile) -> Profile:
+        """Acrescenta um perfil lido de arquivo, gravando o ícone que veio junto."""
+        profile = importado.profile
+        if importado.icon_bytes:
+            try:
+                self.icons_dir.mkdir(parents=True, exist_ok=True)
+                destino = self.icons_dir / f"{profile.id}{importado.icon_suffix}"
+                destino.write_bytes(importado.icon_bytes)
+                profile.icon_path = str(destino)
+            except OSError as exc:
+                # Sem o ícone o perfil ainda é útil: o display mostra o nome.
+                log.warning("não foi possível gravar o ícone importado: %s", exc)
+        self.profiles.append(profile)
         self.save()
         return profile
 

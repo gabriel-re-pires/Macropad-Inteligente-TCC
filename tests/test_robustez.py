@@ -16,6 +16,7 @@ from unittest import mock
 from macropad.actions import base
 from macropad.actions.base import ActionContext
 from macropad.actions.executor import ActionRunner
+from macropad.core import profile_io
 from macropad.core.models import Action, Profile, Settings
 from macropad.core.store import Store
 from macropad.device import protocol
@@ -304,6 +305,140 @@ class SegredosNoCofreTest(unittest.TestCase):
         store.save()
 
         self.assertNotIn("ha_token", cofre.guardados)
+
+
+class TrocaDePerfisTest(unittest.TestCase):
+    """Exportar e importar perfis entre máquinas. O ícone precisa viajar
+    embutido (o caminho de origem não existe no destino) e o id precisa
+    ser novo, para que importar duas vezes não sobrescreva nada.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self._tmp.name)
+        self.store = Store(data_dir=self.dir, vault=CofreFalso())
+        self.store.load()
+        logging.disable(logging.CRITICAL)
+
+    def tearDown(self):
+        logging.disable(logging.NOTSET)
+        self._tmp.cleanup()
+
+    def _perfil_completo(self) -> Profile:
+        perfil = Profile(name="Edição de vídeo")
+        perfil.bindings[0] = Action(
+            type="hotkey", params={"keys": ["ctrl", "s"]}, label="Salvar"
+        )
+        perfil.bindings[5] = Action(
+            type="command", params={"command": "git pull"}, label="Atualizar"
+        )
+        perfil.auto_apps = ["premiere.exe"]
+        return perfil
+
+    def test_ciclo_completo_preserva_o_conteudo(self):
+        original = self._perfil_completo()
+        importado = profile_io.from_json(profile_io.to_json(original))
+
+        copia = importado.profile
+        self.assertEqual(copia.name, original.name)
+        self.assertEqual(copia.bindings[0].params["keys"], ["ctrl", "s"])
+        self.assertEqual(copia.bindings[5].params["command"], "git pull")
+        self.assertEqual(copia.auto_apps, ["premiere.exe"])
+
+    def test_perfil_importado_recebe_id_novo(self):
+        original = self._perfil_completo()
+        texto = profile_io.to_json(original)
+
+        primeiro = profile_io.from_json(texto).profile
+        segundo = profile_io.from_json(texto).profile
+
+        self.assertNotEqual(primeiro.id, original.id)
+        self.assertNotEqual(primeiro.id, segundo.id)
+
+    def test_icone_viaja_embutido_no_arquivo(self):
+        icone = self.dir / "icone.png"
+        icone.write_bytes(b"\x89PNG\r\n\x1a\n conteudo de teste")
+        perfil = Profile(name="Com ícone", icon_path=str(icone))
+
+        importado = profile_io.from_json(profile_io.to_json(perfil, str(icone)))
+
+        self.assertEqual(importado.icon_bytes, icone.read_bytes())
+        self.assertEqual(importado.icon_suffix, ".png")
+
+    def test_icone_e_gravado_na_pasta_de_dados_ao_importar(self):
+        icone = self.dir / "icone.png"
+        icone.write_bytes(b"\x89PNG\r\n\x1a\n conteudo de teste")
+        perfil = Profile(name="Com ícone", icon_path=str(icone))
+        importado = profile_io.from_json(profile_io.to_json(perfil, str(icone)))
+
+        novo = self.store.add_imported_profile(importado)
+
+        self.assertIsNotNone(novo.icon_path)
+        self.assertTrue(Path(novo.icon_path).exists())
+        self.assertEqual(Path(novo.icon_path).read_bytes(), icone.read_bytes())
+
+    def test_icone_ausente_nao_impede_a_exportacao(self):
+        perfil = Profile(name="X", icon_path=str(self.dir / "nao_existe.png"))
+        importado = profile_io.from_json(
+            profile_io.to_json(perfil, perfil.icon_path)
+        )
+        self.assertIsNone(importado.icon_bytes)
+        self.assertEqual(importado.profile.name, "X")
+
+    def test_acoes_que_executam_comandos_sao_sinalizadas(self):
+        importado = profile_io.from_json(profile_io.to_json(self._perfil_completo()))
+        self.assertEqual(importado.sensitive, [(5, "git pull")])
+
+    def test_perfil_inofensivo_nao_gera_alerta(self):
+        perfil = Profile(name="Só atalhos")
+        perfil.bindings[0] = Action(type="hotkey", params={"keys": ["ctrl", "c"]})
+        importado = profile_io.from_json(profile_io.to_json(perfil))
+        self.assertEqual(importado.sensitive, [])
+
+    def test_arquivo_de_outro_tipo_e_recusado(self):
+        for conteudo in ('{"format": "outra-coisa"}', "{}", "[]", "nao e json"):
+            with self.assertRaises(profile_io.ProfileFileError):
+                profile_io.from_json(conteudo)
+
+    def test_versao_futura_e_recusada(self):
+        documento = json.dumps(
+            {"format": profile_io.FORMAT, "version": 99, "profile": {"name": "X"}}
+        )
+        with self.assertRaises(profile_io.ProfileFileError):
+            profile_io.from_json(documento)
+
+    def test_perfil_sem_nome_e_recusado(self):
+        documento = json.dumps(
+            {"format": profile_io.FORMAT, "version": 1, "profile": {"sem": "nome"}}
+        )
+        with self.assertRaises(profile_io.ProfileFileError):
+            profile_io.from_json(documento)
+
+    def test_icone_corrompido_nao_invalida_o_perfil(self):
+        documento = json.dumps(
+            {
+                "format": profile_io.FORMAT,
+                "version": 1,
+                "profile": {"name": "X"},
+                "icon": {"suffix": ".png", "data": "isto nao e base64!!"},
+            }
+        )
+        importado = profile_io.from_json(documento)
+        self.assertEqual(importado.profile.name, "X")
+        self.assertIsNone(importado.icon_bytes)
+
+    def test_exportar_e_importar_por_arquivo(self):
+        destino = self.dir / "perfil.json"
+        self.store.export_profile(self._perfil_completo(), destino)
+
+        importado = profile_io.from_json(destino.read_text(encoding="utf-8"))
+        antes = len(self.store.profiles)
+        self.store.add_imported_profile(importado)
+
+        recarregado = Store(data_dir=self.dir, vault=CofreFalso())
+        recarregado.load()
+        self.assertEqual(len(recarregado.profiles), antes + 1)
+        self.assertIn("Edição de vídeo", [p.name for p in recarregado.profiles])
 
 
 class FilaDeAcoesTest(unittest.TestCase):

@@ -7,6 +7,9 @@ lista = ordem de alternância da tecla de modo), ativar e associar um
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
@@ -23,7 +26,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..core import profile_io
 from ..core.store import Store
+
+
+def _nome_de_arquivo(nome: str) -> str:
+    """Nome de perfil -> nome de arquivo seguro no Windows."""
+    limpo = re.sub(r'[<>:"/\\|?*]', "_", nome).strip(" .")
+    return limpo or "perfil"
 
 
 class ProfilePanel(QWidget):
@@ -80,6 +90,17 @@ class ProfilePanel(QWidget):
         row2.addWidget(icon_btn)
         row2.addWidget(clear_btn)
         layout.addLayout(row2)
+
+        row3 = QHBoxLayout()
+        export_btn = QPushButton("Exportar…")
+        export_btn.setToolTip("Salva o perfil selecionado em um arquivo .json.")
+        export_btn.clicked.connect(self._export)
+        import_btn = QPushButton("Importar…")
+        import_btn.setToolTip("Acrescenta um perfil vindo de um arquivo .json.")
+        import_btn.clicked.connect(self._import)
+        row3.addWidget(export_btn)
+        row3.addWidget(import_btn)
+        layout.addLayout(row3)
 
         apps_btn = QPushButton("Apps vinculados…")
         apps_btn.setToolTip(
@@ -204,6 +225,77 @@ class ProfilePanel(QWidget):
         self._store.save()
         self.refresh()
         self.profiles_changed.emit()
+
+    # ------------------------------------------------- exportar/importar
+
+    def _export(self) -> None:
+        profile = self._store.profile_by_id(self.selected_profile_id())
+        if profile is None:
+            return
+        sugestao = f"{_nome_de_arquivo(profile.name)}.json"
+        caminho, _ = QFileDialog.getSaveFileName(
+            self, "Exportar perfil", sugestao, "Perfil do macropad (*.json)"
+        )
+        if not caminho:
+            return
+        try:
+            self._store.export_profile(profile, Path(caminho))
+        except OSError as exc:
+            QMessageBox.critical(self, "Exportar perfil", f"Falha ao gravar: {exc}")
+            return
+        QMessageBox.information(
+            self, "Exportar perfil", f"Perfil “{profile.name}” exportado."
+        )
+
+    def _import(self) -> None:
+        caminho, _ = QFileDialog.getOpenFileName(
+            self, "Importar perfil", "", "Perfil do macropad (*.json)"
+        )
+        if not caminho:
+            return
+        try:
+            texto = Path(caminho).read_text(encoding="utf-8")
+            importado = profile_io.from_json(texto)
+        except OSError as exc:
+            QMessageBox.critical(self, "Importar perfil", f"Falha ao ler: {exc}")
+            return
+        except profile_io.ProfileFileError as exc:
+            QMessageBox.critical(self, "Importar perfil", f"Arquivo inválido: {exc}")
+            return
+
+        if not self._confirmar_acoes_sensiveis(importado):
+            return
+
+        profile = self._store.add_imported_profile(importado)
+        self.refresh()
+        self._select(profile.id)
+        self.profiles_changed.emit()
+
+    def _confirmar_acoes_sensiveis(self, importado) -> bool:
+        """Mostra o que o perfil executaria antes de aceitá-lo.
+
+        Um perfil vindo de terceiros pode conter ações que rodam comandos
+        de shell ou abrem programas com os privilégios de quem importa.
+        """
+        if not importado.sensitive:
+            return True
+        linhas = "\n".join(
+            f"  • Tecla {tecla + 1}: {alvo or '(sem alvo)'}"
+            for tecla, alvo in importado.sensitive[:10]
+        )
+        restantes = len(importado.sensitive) - 10
+        if restantes > 0:
+            linhas += f"\n  • … e mais {restantes}"
+        answer = QMessageBox.warning(
+            self,
+            "Importar perfil",
+            f"O perfil “{importado.profile.name}” executa comandos ou abre "
+            f"programas nesta máquina:\n\n{linhas}\n\n"
+            "Importe apenas de fontes confiáveis. Continuar?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        return answer == QMessageBox.Yes
 
     def _edit_auto_apps(self) -> None:
         from .auto_apps_dialog import AutoAppsDialog
