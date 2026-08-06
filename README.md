@@ -16,6 +16,18 @@ com o software rodando, o macropad tem os recursos completos via USB;
 sem o software, o firmware atua como teclado Bluetooth (BLE HID) com
 atalhos fixos — ver [firmware/](firmware/README.md).
 
+## Download
+
+**[Baixar a última versão →](https://github.com/gabriel-re-pires/Macropad-Inteligente-TCC/releases/latest)**
+
+Pegue o `MacropadConfigurator.exe` e execute: arquivo único, sem console,
+que roda em Windows 10/11 **sem instalar Python nem nada mais**.
+
+Como o executável não é assinado digitalmente, o SmartScreen pode avisar
+"O Windows protegeu o computador" na primeira execução — clique em **Mais
+informações → Executar assim mesmo**. Quem preferir pode gerar o próprio
+executável a partir do código (ver [Gerar o executável](#gerar-o-executável)).
+
 ## Tipos de ação
 
 | Tipo | Exemplo |
@@ -33,10 +45,13 @@ atalhos fixos — ver [firmware/](firmware/README.md).
 
 ## Requisitos
 
-- Windows 10/11 (ações de teclado usam a API do Windows via `pynput`)
-- Python 3.11+
+- **Para usar:** Windows 10/11. O executável do
+  [release](https://github.com/gabriel-re-pires/Macropad-Inteligente-TCC/releases/latest)
+  já traz tudo de que precisa.
+- **Para desenvolver:** Windows 10/11 e Python 3.11+ (as ações de teclado
+  usam a API do Windows via `pynput`).
 
-## Instalação e execução
+## Rodar a partir do código
 
 ```powershell
 cd tcc-macropad
@@ -75,8 +90,9 @@ stubs não declaram.
 
 ## Gerar o executável
 
-Para rodar em um Windows sem Python instalado (a máquina da
-apresentação, por exemplo):
+O executável publicado está no
+[release](https://github.com/gabriel-re-pires/Macropad-Inteligente-TCC/releases/latest);
+gere o seu quando quiser empacotar uma versão do código atual:
 
 ```powershell
 .venv\Scripts\python -m pip install -e ".[dev]"
@@ -84,8 +100,9 @@ apresentação, por exemplo):
 ```
 
 O resultado é `dist\MacropadConfigurator.exe` — arquivo único, sem
-console. O ícone é gerado a partir do mesmo desenho usado pela janela e
-pela bandeja (`tools\make_icon.py`), então nunca diverge.
+console, que roda em um Windows sem Python instalado. O ícone é gerado a
+partir do mesmo desenho usado pela janela e pela bandeja
+(`tools\make_icon.py`), então nunca diverge.
 
 ## Compartilhar perfis
 
