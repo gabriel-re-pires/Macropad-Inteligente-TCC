@@ -55,6 +55,10 @@ class MacropadApp:
 
         self.link: DeviceLink | None = None
         self.simulator: SimulatorLink | None = None
+        # Última escolha de enlace, para restaurar depois de uma pausa
+        # (a gravação do firmware precisa da porta serial livre).
+        self._port_choice: str | None = None
+        self._paused = False
 
         # Troca automática de perfil pelo aplicativo em foco (edge-triggered:
         # só reage quando o foco MUDA, então uma troca manual pela tecla de
@@ -70,6 +74,8 @@ class MacropadApp:
     def use_port(self, port: str | None) -> None:
         """Ativa o enlace escolhido: automático, uma COM específica ou o simulador."""
         self._stop_link()
+        self._port_choice = port
+        self._paused = False
         if port == SIMULATOR_PORT:
             self.simulator = SimulatorLink(
                 on_message=self.bridge.emit_message,
@@ -87,6 +93,31 @@ class MacropadApp:
                 preferred_port=preferred,
             )
         self.link.start()
+
+    def pause_link(self) -> bool:
+        """Solta a porta serial para que outra ferramenta possa usá-la.
+
+        A gravação do firmware precisa de acesso exclusivo à COM; enquanto
+        o enlace estiver rodando, o esptool encontraria a porta ocupada.
+        O simulador não usa porta alguma, então não é pausado.
+
+        Devolve ``True`` se havia um enlace serial ativo — nesse caso o
+        chamador deve chamar :meth:`resume_link` ao terminar.
+        """
+        if self._paused or not isinstance(self.link, SerialLink):
+            return False
+        log.info("pausando o enlace serial")
+        self.link.stop()
+        self.link = None
+        self._paused = True
+        return True
+
+    def resume_link(self) -> None:
+        """Reativa o enlace pausado por :meth:`pause_link`."""
+        if not self._paused:
+            return
+        log.info("retomando o enlace serial")
+        self.use_port(self._port_choice)
 
     def _stop_link(self) -> None:
         if self.link is not None:

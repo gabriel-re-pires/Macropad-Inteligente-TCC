@@ -29,6 +29,17 @@ Tudo em **`macropad_firmware/config.h`**:
 O índice das teclas (0 = superior esquerda, 17 = inferior direita) deve
 corresponder à grade mostrada no software.
 
+## Gravação
+
+Depois de compilado uma vez, o firmware pode ser gravado **pelo próprio
+configurador** (botão *Gravar firmware…*), sem abrir a Arduino IDE — útil
+para regravar o dispositivo na apresentação ou em outra máquina. Ver a
+seção *Gravar o firmware* do [README principal](../README.md).
+
+A Arduino IDE continua sendo o caminho durante o desenvolvimento do
+firmware, e é ela quem produz os binários descritos em
+[Publicar uma versão](#publicar-uma-versão).
+
 ## Compilação (Arduino IDE)
 
 1. Instale o suporte a ESP32 (Gestor de Placas → "esp32" da Espressif).
@@ -54,6 +65,32 @@ corresponder à grade mostrada no software.
    atalhos fixos.
 3. Sem display ou sem BLE por enquanto? O firmware continua funcional
    pela serial — o software é tolerante à ausência dessas partes.
+
+## Publicar uma versão
+
+O configurador grava uma **imagem única** (bootloader + tabela de
+partições + aplicação), o que o dispensa de conhecer o layout de
+partições escolhido na compilação. A Arduino IDE, porém, exporta os três
+arquivos separados — `tools/merge_firmware.py` os funde:
+
+1. Atualize `FW_VERSION` no `.ino` (é ele quem aparece no aplicativo e
+   nomeia o arquivo gerado).
+2. Na Arduino IDE: **Sketch → Exportar Binário Compilado**.
+3. Na raiz do projeto:
+
+   ```powershell
+   .venv\Scripts\python tools\merge_firmware.py
+   ```
+
+   Sem argumentos o script procura a exportação dentro de `firmware/`;
+   passe a pasta se ela estiver em outro lugar. O resultado é
+   `dist\firmware-<versao>.bin`.
+4. Anexe esse arquivo ao *release* do GitHub. O nome precisa casar com
+   `firmware*.bin` — é assim que o aplicativo o encontra entre os anexos.
+
+Para testar antes de publicar, use **Arquivo .bin no computador** no
+diálogo de gravação; a exportação crua (`*.ino.bin`) também serve, e vai
+para 0x10000 preservando o bootloader já gravado no chip.
 
 ## Observações
 
