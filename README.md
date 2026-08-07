@@ -10,6 +10,9 @@ a cada tecla, organiza as ações em **perfis** ilimitados (com nome e
 possível **trocar de perfil automaticamente pelo aplicativo em foco**
 (opcional; a tecla de modo continua prevalecendo até o foco mudar).
 
+O aplicativo também **grava o firmware no ESP32-C3** — não é preciso
+instalar a Arduino IDE para colocar o macropad para funcionar.
+
 Roda em **segundo plano na bandeja do sistema** (fechar a janela não
 encerra) e pode **iniciar junto com o Windows**. O projeto é **híbrido**:
 com o software rodando, o macropad tem os recursos completos via USB;
@@ -43,9 +46,38 @@ executável a partir do código (ver [Gerar o executável](#gerar-o-executável)
 | Webhook (HTTP) | chamar n8n, IFTTT, Zapier ou qualquer URL |
 | Alternar perfil | mesmo efeito da tecla de modo |
 
+## Gravar o firmware
+
+O botão **Gravar firmware…**, na barra superior, escreve o firmware
+diretamente no ESP32-C3 pela mesma porta USB já usada pelo macropad. Nada
+além do aplicativo é necessário: o `esptool` vai embutido.
+
+1. Conecte o macropad pelo cabo USB (um cabo de **dados** — os de só
+   carga não funcionam).
+2. Clique em **Gravar firmware…** e confira a porta detectada.
+3. Escolha a origem do binário:
+   - **Último release publicado no GitHub** — o aplicativo consulta o
+     repositório, baixa o `firmware-<versao>.bin` e guarda em cache; e
+   - **Arquivo .bin no computador** — para gravar uma compilação sua,
+     inclusive a exportação crua da Arduino IDE (`*.ino.bin`).
+4. Clique em **Gravar firmware** e acompanhe o progresso.
+
+A versão gravada no dispositivo aparece ao lado do status de conexão
+(o firmware a informa na mensagem `hello`), e o diálogo avisa quando o
+release publicado é mais novo que ela.
+
+Se a gravação falhar com "não respondeu", coloque a placa em modo de
+gravação manualmente: segure **BOOT**, toque em **RESET**, solte **BOOT**
+e grave de novo. Placas com reset automático dispensam isso.
+
+Para publicar uma versão nova do firmware, gere a imagem única com
+`tools/merge_firmware.py` e anexe-a ao release — ver
+[firmware/README.md](firmware/README.md).
+
 ## Requisitos
 
-- **Para usar:** Windows 10/11. O executável do
+- **Para usar:** Windows 10/11 (e um cabo USB de dados para gravar o
+  firmware). O executável do
   [release](https://github.com/gabriel-re-pires/Macropad-Inteligente-TCC/releases/latest)
   já traz tudo de que precisa.
 - **Para desenvolver:** Windows 10/11 e Python 3.11+ (as ações de teclado
@@ -138,6 +170,6 @@ src/macropad/
 ├── actions/       # motor de ações (registry + duas vias de execução)
 ├── integrations/  # Home Assistant, OBS, app em foco
 └── ui/            # interface PySide6 (janela, bandeja, diálogos)
-tools/             # geração do ícone e do executável
+tools/             # ícone, executável e empacotamento do firmware
 firmware/          # sketch Arduino do ESP32-C3 (ajustar pinos em config.h)
 ```

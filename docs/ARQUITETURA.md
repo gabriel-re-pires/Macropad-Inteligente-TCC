@@ -11,20 +11,21 @@ o que permite testá-la isoladamente (18 testes em `tests/`).
 │  ui/  (PySide6)                                     │
 │  MainWindow · KeyGrid · ActionEditor · ProfilePanel │
 │  OledPreview · SimulatorWindow · SettingsDialog     │
+│  FlashDialog                                        │
 └──────────────┬──────────────────────────────────────┘
                │ sinais Qt (DeviceBridge)
 ┌──────────────▼──────────────────────────────────────┐
 │  app.py — raiz de composição                        │
 └───┬──────────────┬──────────────────┬───────────────┘
     │              │                  │
-┌───▼────────┐ ┌───▼────────────┐ ┌───▼─────────────┐
-│ core/      │ │ actions/       │ │ device/         │
-│ Controller │ │ ActionRunner   │ │ SerialLink      │
-│ Store      │ │ (thread única) │ │ (thread própria)│
-│ Profile    │ │ registry de    │ │ SimulatorLink   │
-│ Action     │ │ executores     │ │ protocol (JSON) │
-│ icons      │ └───┬────────────┘ └─────────────────┘
-└────────────┘     │
+┌───▼────────┐ ┌───▼────────────┐ ┌───▼───────────────┐
+│ core/      │ │ actions/       │ │ device/           │
+│ Controller │ │ ActionRunner   │ │ SerialLink        │
+│ Store      │ │ (thread única) │ │ SimulatorLink     │
+│ Profile    │ │ registry de    │ │ protocol (JSON)   │
+│ Action     │ │ executores     │ │ flasher (esptool) │
+│ icons      │ └───┬────────────┘ │ firmware_release  │
+└────────────┘     │              └───────────────────┘
               ┌────▼─────────────┐
               │ integrations/    │
               │ home_assistant   │
@@ -95,6 +96,27 @@ o que permite testá-la isoladamente (18 testes em `tests/`).
    no mesmo registry; o cliente obs-websocket é criado sob demanda,
    reutilizado entre ações e refeito automaticamente se o OBS reiniciar.
 
+9. **Gravação do firmware pelo próprio aplicativo**
+   (`device/flasher.py` + `device/firmware_release.py` + `ui/flash_dialog.py`).
+   O configurador embute o `esptool` — a mesma ferramenta que a Arduino
+   IDE usa por baixo — e o chama **dentro do processo**, não por
+   `subprocess`: no executável do PyInstaller não existe um interpretador
+   Python para invocar. O progresso vem do `TemplateLogger`, ponto de
+   extensão oficial do esptool 5, cujo logger global é trocado sob um
+   lock e restaurado no `finally`.
+
+   O binário gravado é uma **imagem completa** (bootloader + partições +
+   aplicação fundidos por `tools/merge_firmware.py`) escrita em 0x0, e
+   não os três arquivos soltos da exportação da Arduino IDE: assim o
+   aplicativo não precisa conhecer o layout de partições escolhido na
+   compilação. A exportação crua (`*.ino.bin`) continua aceita e vai para
+   0x10000, distinguida pelo nome.
+
+   Enquanto o diálogo grava, o enlace serial é pausado
+   (`MacropadApp.pause_link`) — o esptool precisa da COM com acesso
+   exclusivo — e retomado ao fim. A gravação roda em uma `QThread` para
+   não congelar a interface durante os ~20 s do processo.
+
 ## Segurança
 
 - A ação "Executar comando" roda o que o **próprio usuário** configurou,
@@ -119,4 +141,8 @@ o que permite testá-la isoladamente (18 testes em `tests/`).
   `remote=True` para que ela use a via própria e não atrase as teclas.
 - **Nova integração:** criar módulo em `integrations/` e expor como um
   tipo de ação.
-- **Novo hardware:** implementar a interface `DeviceLink`.
+- **Novo hardware:** implementar a interface `DeviceLink`. Se o chip
+  não for um ESP32-C3, ajustar `flasher.CHIP` e o layout de endereços.
+- **Novo firmware publicado:** gerar a imagem com
+  `tools/merge_firmware.py` e anexá-la ao release do GitHub como
+  `firmware-<versao>.bin` — o aplicativo passa a oferecê-la sozinho.
