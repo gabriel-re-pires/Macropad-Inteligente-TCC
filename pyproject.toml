@@ -20,6 +20,9 @@ dependencies = [
     "requests>=2.31",
     "obsws-python>=1.7",
     "keyring>=24",
+    # Gravação do firmware pela própria interface. A partir da 5.0 o esptool
+    # expõe TemplateLogger, usado para levar progresso e log ao diálogo.
+    "esptool>=5.0",
 ]
 
 [project.optional-dependencies]
