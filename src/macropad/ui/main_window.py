@@ -35,6 +35,7 @@ from ..device import protocol
 from ..device.link import available_ports
 from . import app_icon
 from .action_editor import ActionEditorDialog
+from .flash_dialog import open_flash_dialog
 from .key_grid import KeyGrid
 from .oled_preview import OledPreview
 from .profile_panel import ProfilePanel
@@ -51,6 +52,10 @@ class MainWindow(QMainWindow):
         self._simulator_window: SimulatorWindow | None = None
         # Ação copiada pelo menu de contexto da grade, para colar em outra tecla.
         self._clipboard_action: Action | None = None
+        # Porta e versão anunciadas pelo dispositivo — usadas pelo diálogo de
+        # gravação para pré-selecionar a porta e comparar com o release.
+        self._connected_port: str | None = None
+        self._device_version: str | None = None
 
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(_app_icon())
@@ -76,6 +81,12 @@ class MainWindow(QMainWindow):
         refresh = QPushButton("Atualizar portas")
         refresh.clicked.connect(self._reload_ports)
         top.addWidget(refresh)
+        flash_btn = QPushButton("Gravar firmware…")
+        flash_btn.setToolTip(
+            "Grava o firmware no ESP32-C3 sem precisar da Arduino IDE."
+        )
+        flash_btn.clicked.connect(self._open_flash_dialog)
+        top.addWidget(flash_btn)
         settings_btn = QPushButton("Configurações…")
         settings_btn.clicked.connect(self._open_settings)
         top.addWidget(settings_btn)
@@ -244,8 +255,15 @@ class MainWindow(QMainWindow):
     def _set_connected(self, connected: bool, port: str) -> None:
         color = "#41d98d" if connected else "#e05b5b"
         self._status_dot.setStyleSheet(f"color: {color}; font-size: 16px;")
+        self._connected_port = port if connected else None
+        if not connected:
+            # A versão pertence ao dispositivo que saiu: mantê-la faria o
+            # diálogo de gravação comparar com um firmware que não está mais lá.
+            self._device_version = None
         if connected:
-            self._status_label.setText(f"Conectado ({port})")
+            version = self._device_version
+            firmware = f" — firmware {version}" if version else ""
+            self._status_label.setText(f"Conectado ({port}){firmware}")
         else:
             self._status_label.setText("Desconectado — procurando o macropad…")
         if hasattr(self, "_tray"):
@@ -255,6 +273,13 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------- eventos
 
     def _on_device_message(self, message: dict[str, Any]) -> None:
+        if message.get("t") == "hello":
+            version = str(message.get("fw") or "").strip()
+            if version and version != self._device_version:
+                self._device_version = version
+                if self._connected_port:
+                    self._set_connected(True, self._connected_port)
+            return
         if message.get("t") != "key" or message.get("e") != "down":
             return
         key = int(message.get("k", -1))
@@ -366,6 +391,17 @@ class MainWindow(QMainWindow):
             "Executando em 3 segundos — leve o foco à janela alvo…", 3000
         )
         QTimer.singleShot(3000, lambda: self._core.runner.submit(action))
+
+    def _open_flash_dialog(self) -> None:
+        """Abre a gravação do firmware, já apontada para a porta em uso."""
+        open_flash_dialog(
+            self,
+            self._core,
+            current_port=self._connected_port,
+            device_version=self._device_version,
+        )
+        # A gravação reinicia o ESP32: as portas podem ter mudado de número.
+        self._reload_ports()
 
     def _open_settings(self) -> None:
         dialog = SettingsDialog(
