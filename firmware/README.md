@@ -25,6 +25,14 @@ Tudo em **`macropad_firmware/config.h`**:
    linhas/colunas.
 2. `OLED_SDA` / `OLED_SCL` — GPIOs do I2C do display (endereço padrão 0x3C).
 3. `FALLBACK_KEYS` — os 18 atalhos do modo autônomo BLE.
+4. `ENABLE_BLE` — comente para compilar sem o modo autônomo (ver
+   [Compilar sem o Bluetooth](#compilar-sem-o-bluetooth)).
+
+Nas linhas (`ROW_PINS`), evite **GPIO 2, 8 e 9**: são pinos de strapping,
+lidos no reset para decidir o modo de boot. A varredura mantém a linha em
+nível baixo, então um reset no instante errado faria o chip entrar em
+modo de gravação em vez de rodar o firmware. Nas colunas o risco é menor,
+porque o pull-up as mantém em nível alto.
 
 O índice das teclas (0 = superior esquerda, 17 = inferior direita) deve
 corresponder à grade mostrada no software.
@@ -45,16 +53,37 @@ firmware, e é ela quem produz os binários descritos em
 1. Instale o suporte a ESP32 (Gestor de Placas → "esp32" da Espressif).
 2. Placa: **ESP32C3 Dev Module** · **USB CDC On Boot: Enabled** (essencial —
    sem isso o `Serial` não sai pela USB).
-3. Bibliotecas (Gerenciador de Bibliotecas):
-   - **Adafruit SSD1306** (instala junto a Adafruit GFX)
-   - **ArduinoJson** (v7)
-   - **NimBLE-Arduino**
-4. **ESP32-BLE-Keyboard** — a versão original (T-vK) não compila para o
-   C3 com Bluedroid; use o fork com NimBLE:
-   <https://github.com/T-vK/ESP32-BLE-Keyboard> (release ≥ 0.3.2) e
-   mantenha o `#define USE_NIMBLE` (já presente no .ino; se a sua versão
-   da lib exigir, descomente `#define USE_NIMBLE` dentro de
-   `BleKeyboard.h`).
+3. Bibliotecas do Gerenciador de Bibliotecas, sempre necessárias:
+   - **Adafruit SSD1306** (aceite instalar as dependências: Adafruit GFX
+     e Adafruit BusIO)
+   - **ArduinoJson** (versão **7.x**)
+4. Só se o modo autônomo estiver ligado (`ENABLE_BLE`, ver abaixo):
+   - **NimBLE-Arduino**, versão **1.4.x** — a 2.x mudou a API e a
+     ESP32-BLE-Keyboard não acompanha.
+   - **ESP32-BLE-Keyboard**, que não está no Gerenciador: baixe o ZIP em
+     <https://github.com/T-vK/ESP32-BLE-Keyboard/releases> (release
+     ≥ 0.3.2) e use *Sketch → Incluir Biblioteca → Adicionar biblioteca
+     .ZIP*. O `#define USE_NIMBLE` que ela exige no C3 (o Bluedroid não
+     compila para esse chip) já está no `config.h`, antes do include.
+
+### Compilar sem o Bluetooth
+
+O modo autônomo é opcional. Comentando esta linha no `config.h`:
+
+```cpp
+#define ENABLE_BLE
+```
+
+o firmware compila apenas com as bibliotecas do passo 3 — as duas do
+passo 4 nem precisam estar instaladas. O macropad continua completo pela
+USB, que é como ele funciona com o software aberto; some apenas o teclado
+Bluetooth de quando o software está fechado, e o display passa a mostrar
+"Modo USB apenas" na tela de espera.
+
+É o caminho recomendado para o primeiro teste do hardware: valida a
+matriz de teclas, o display e a comunicação com o software sem esbarrar
+na instalação manual e nos conflitos de versão da parte BLE. Depois é só
+descomentar.
 
 ## Teste rápido
 

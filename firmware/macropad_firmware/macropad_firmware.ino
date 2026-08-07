@@ -11,29 +11,33 @@
 // O host envia "ping" a cada 3 s; a ausência de mensagens por
 // HOST_TIMEOUT_MS caracteriza o modo autônomo.
 //
+// O modo autônomo é opcional: comente ENABLE_BLE em config.h para
+// compilar só com o modo estendido (ver firmware/README.md).
+//
 // Bibliotecas (Gerenciador de Bibliotecas do Arduino IDE):
 //   - Adafruit SSD1306 (+ Adafruit GFX)
 //   - ArduinoJson (v7)
-//   - NimBLE-Arduino
-//   - ESP32-BLE-Keyboard (fork com suporte a NimBLE — ver firmware/README.md)
+// E, apenas com ENABLE_BLE ligado:
+//   - NimBLE-Arduino (1.4.x)
+//   - ESP32-BLE-Keyboard (instalada por ZIP — ver firmware/README.md)
 //
 // Placa: "ESP32C3 Dev Module", USB CDC On Boot: "Enabled".
 // =========================================================================
 
-#define USE_NIMBLE  // ESP32-BLE-Keyboard via NimBLE (obrigatório no C3)
-
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <ArduinoJson.h>
-#include <BleKeyboard.h>
 #include <Wire.h>
 
+// Traz BleKeyboard.h (com USE_NIMBLE) quando o modo autônomo está ligado.
 #include "config.h"
 
 constexpr char FW_VERSION[] = "1.0.0";
 
 Adafruit_SSD1306 display(OLED_W, OLED_H, &Wire, -1);
+#ifdef ENABLE_BLE
 BleKeyboard bleKeyboard(BLE_DEVICE_NAME, "UEMG", 100);
+#endif
 
 // ------------------------------------------------------------------ estado
 bool keyState[KEY_COUNT] = {false};
@@ -66,7 +70,9 @@ void setup() {
     showStatusScreen();
   }
 
+#ifdef ENABLE_BLE
   bleKeyboard.begin();
+#endif
   sendHello();
 }
 
@@ -104,6 +110,7 @@ void onKeyEvent(uint8_t index, bool pressed) {
   Serial.printf("{\"t\":\"key\",\"k\":%u,\"e\":\"%s\"}\n", index,
                 pressed ? "down" : "up");
 
+#ifdef ENABLE_BLE
   // Modo autônomo: replica o atalho fixo via teclado Bluetooth.
   if (!hostActive() && bleKeyboard.isConnected()) {
     const FallbackKey &fb = FALLBACK_KEYS[index];
@@ -119,6 +126,7 @@ void onKeyEvent(uint8_t index, bool pressed) {
       bleKeyboard.releaseAll();
     }
   }
+#endif
 }
 
 // ========================================================== serial (host)
@@ -192,8 +200,12 @@ void showStatusScreen() {
   display.setCursor(10, 34);
   display.print("Aguardando host...");
   display.setCursor(10, 48);
+#ifdef ENABLE_BLE
   display.print(bleKeyboard.isConnected() ? "BLE: conectado"
                                           : "BLE: pareavel");
+#else
+  display.print("Modo USB apenas");
+#endif
   display.display();
 }
 

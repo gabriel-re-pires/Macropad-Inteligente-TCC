@@ -3,7 +3,22 @@
 // =========================================================================
 #pragma once
 
+// --------------------------------------------------------------- modo híbrido
+// Comente a linha abaixo para compilar SEM o modo autônomo (teclado
+// Bluetooth). O macropad continua completo pela USB — que é como ele
+// funciona com o software aberto — e a compilação passa a exigir apenas
+// Adafruit SSD1306, Adafruit GFX e ArduinoJson, todas disponíveis no
+// Gerenciador de Bibliotecas. Serve para validar o hardware sem depender
+// da NimBLE-Arduino e da ESP32-BLE-Keyboard, que se instalam à parte e
+// são sensíveis à versão.
+#define ENABLE_BLE
+
+#ifdef ENABLE_BLE
+// Precisa vir antes do include: a ESP32-BLE-Keyboard usa Bluedroid por
+// padrão, que não compila para o C3.
+#define USE_NIMBLE
 #include <BleKeyboard.h>
+#endif
 
 // ---------------------------------------------------------------- teclas
 // Matriz 3 linhas x 6 colunas = 18 teclas.
@@ -13,6 +28,12 @@
 // >>> TROQUE os números de GPIO pelos usados no PCB de vocês. <<<
 // Convenção elétrica adotada: diodos das teclas orientados LINHA -> COLUNA
 // (linha é acionada em LOW; colunas com INPUT_PULLUP).
+//
+// Evite GPIO 2, 8 e 9 nas LINHAS: são pinos de strapping, lidos no reset
+// para decidir o modo de boot. Como a varredura mantém a linha em nível
+// baixo, um reset no instante errado faria o chip entrar em modo de
+// gravação em vez de rodar o firmware. Nas colunas o risco é menor, já
+// que o pull-up as mantém em nível alto.
 constexpr uint8_t KEY_ROWS = 3;
 constexpr uint8_t KEY_COLS = 6;
 constexpr uint8_t KEY_COUNT = KEY_ROWS * KEY_COLS;
@@ -36,6 +57,8 @@ constexpr int16_t OLED_H = 64;
 constexpr uint32_t HOST_TIMEOUT_MS = 10000;
 
 // ------------------------------------------------------------- modo BLE
+#ifdef ENABLE_BLE
+
 // Nome anunciado no pareamento Bluetooth.
 #define BLE_DEVICE_NAME "Macropad TCC"
 
@@ -71,3 +94,5 @@ const FallbackKey FALLBACK_KEYS[KEY_COUNT] = {
     /* 16 */ {nullptr, 0, 0, 0},
     /* 17 */ {nullptr, 0, 0, 0},
 };
+
+#endif  // ENABLE_BLE
