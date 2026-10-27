@@ -1,17 +1,21 @@
-"""Grade visual das 18 teclas do macropad.
+"""Grade visual das 18 teclas do macropad, no layout físico do PCB.
 
 Cada botão mostra o rótulo da ação configurada no perfil em edição.
 Clicar em uma tecla abre o editor de ações; o botão direito abre um menu
 com as operações rápidas. A tecla de modo recebe um destaque visual, e a
 tecla pressionada no dispositivo acende por um instante.
+
+A posição de cada botão vem de :data:`~macropad.core.models.KEY_LAYOUT`,
+então a grade tem exatamente a forma do macropad real (linha de cima com
+três teclas à direita; o espaço vazio é onde ficam o módulo e o display).
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QGridLayout, QPushButton, QWidget
+from PySide6.QtWidgets import QGridLayout, QLabel, QPushButton, QWidget
 
-from ..core.models import KEY_COLS, KEY_COUNT, Profile
+from ..core.models import GRID_COLS, KEY_LAYOUT, Profile, key_at
 
 
 class KeyGrid(QWidget):
@@ -27,7 +31,7 @@ class KeyGrid(QWidget):
         layout.setSpacing(8)
         self._buttons: list[QPushButton] = []
         self._flash_timers: dict[int, QTimer] = {}
-        for i in range(KEY_COUNT):
+        for i, (row, col) in enumerate(KEY_LAYOUT):
             button = QPushButton()
             button.setObjectName("keyButton")
             button.setMinimumSize(96, 72)
@@ -37,8 +41,17 @@ class KeyGrid(QWidget):
             button.customContextMenuRequested.connect(
                 lambda _pos, k=i: self.key_menu_requested.emit(k)
             )
-            layout.addWidget(button, i // KEY_COLS, i % KEY_COLS)
+            layout.addWidget(button, row, col)
             self._buttons.append(button)
+
+        # As posições vazias da primeira linha correspondem ao módulo e ao
+        # display no PCB; um marcador discreto explica o "buraco".
+        empty = [c for c in range(GRID_COLS) if key_at(0, c) is None]
+        if empty:
+            placeholder = QLabel("ESP32-C3\n+ display")
+            placeholder.setObjectName("hint")
+            placeholder.setAlignment(Qt.AlignCenter)
+            layout.addWidget(placeholder, 0, empty[0], 1, len(empty))
 
     # ------------------------------------------------------------- destaque
 
@@ -76,9 +89,15 @@ class KeyGrid(QWidget):
             button.setProperty("modeKey", is_mode)
             button.setProperty("bound", action is not None)
             _repolish(button)
-            tooltip = "Tecla de modo: alterna o perfil ativo" if is_mode else (
-                action.label or "" if action else "Sem ação — clique para configurar"
-            )
+            if is_mode:
+                tooltip = "Tecla de modo: alterna o perfil ativo"
+            elif action is not None:
+                tooltip = (
+                    f"{action.label or action.type} — no display: "
+                    f"{action.display_short}"
+                )
+            else:
+                tooltip = "Sem ação — clique para configurar"
             button.setToolTip(tooltip)
 
 

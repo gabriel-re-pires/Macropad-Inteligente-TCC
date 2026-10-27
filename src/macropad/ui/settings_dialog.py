@@ -2,6 +2,7 @@
 
 - Tecla de modo: escolhida na lista ou capturada pressionando a tecla
   física no próprio macropad ("defina no próprio teclado").
+- Display: mapa de teclas ou ícone do perfil; retorno visual da tecla.
 - Integração Home Assistant: URL + token de longa duração, com teste.
 """
 
@@ -81,6 +82,27 @@ class SettingsDialog(QDialog):
         self._autostart_check.setChecked(settings.start_with_windows)
         form.addRow(self._autostart_check)
 
+        display_title = QLabel("Display do macropad")
+        display_title.setObjectName("panelTitle")
+        form.addRow(display_title)
+        self._display_combo = QComboBox()
+        self._display_combo.addItem(
+            "Mapa de teclas (nome do perfil + abreviação de cada tecla)", "mapa"
+        )
+        self._display_combo.addItem("Ícone do perfil (ou o nome, sem ícone)", "icone")
+        index = self._display_combo.findData(settings.display_mode)
+        self._display_combo.setCurrentIndex(max(index, 0))
+        self._display_combo.setToolTip(
+            "O mapa mostra, na posição de cada tecla, a abreviação definida no "
+            "editor de ações (até 3 letras)."
+        )
+        form.addRow("Mostrar:", self._display_combo)
+        self._feedback_check = QCheckBox(
+            "Destacar no display a tecla pressionada (apenas no mapa)"
+        )
+        self._feedback_check.setChecked(settings.key_feedback)
+        form.addRow(self._feedback_check)
+
         ha_title = QLabel("Home Assistant")
         ha_title.setObjectName("panelTitle")
         form.addRow(ha_title)
@@ -118,8 +140,9 @@ class SettingsDialog(QDialog):
         layout.addLayout(form)
 
         note = QLabel(
-            "O token fica salvo em texto no arquivo de configuração local; "
-            "use um token exclusivo para o macropad e revogue-o se necessário."
+            "O token e a senha ficam no Gerenciador de Credenciais do Windows, "
+            "não em arquivo. Ainda assim, use um token exclusivo para o macropad "
+            "e revogue-o se necessário."
         )
         note.setWordWrap(True)
         note.setObjectName("hint")
@@ -201,6 +224,8 @@ class SettingsDialog(QDialog):
             return
         self._settings.mode_key = self._mode_combo.currentData()
         self._settings.auto_switch_enabled = self._auto_switch_check.isChecked()
+        self._settings.display_mode = self._display_combo.currentData()
+        self._settings.key_feedback = self._feedback_check.isChecked()
         self._settings.start_with_windows = self._autostart_check.isChecked()
         self._settings.ha_url = self._ha_url.text().strip()
         self._settings.ha_token = self._ha_token.text().strip()

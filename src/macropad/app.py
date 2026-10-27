@@ -49,6 +49,10 @@ class MacropadApp:
             runner=self.runner,
             send=self._send,
             on_profile_changed=self.bridge.profile_changed.emit,
+            # O controlador é livre de Qt; o temporizador do retorno visual
+            # da tecla é injetado (roda na thread da UI, como o próprio
+            # controlador).
+            schedule=lambda seconds, fn: QTimer.singleShot(int(seconds * 1000), fn),
         )
         # Eventos do dispositivo chegam pela ponte já na thread da UI.
         self.bridge.message.connect(self.controller.handle_message)

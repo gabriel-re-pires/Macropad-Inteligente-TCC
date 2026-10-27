@@ -11,6 +11,7 @@ import json
 from typing import Any
 
 from PySide6.QtCore import QTimer
+from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -19,6 +20,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
+    QKeySequenceEdit,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -34,7 +36,7 @@ from PySide6.QtWidgets import (
 from ..actions import keys
 from ..actions.base import all_types
 from ..actions.executor import ActionRunner
-from ..core.models import Action
+from ..core.models import SHORT_LABEL_MAX, Action
 
 # Tipos ocultos em contexto de macro (passos não podem conter macros/loops).
 _MACRO_EXCLUDED = {"macro", "mode_switch"}
@@ -76,6 +78,15 @@ class ActionEditorDialog(QDialog):
         self._label_edit = QLineEdit()
         self._label_edit.setPlaceholderText("Nome curto exibido na tecla (opcional)")
         form.addRow("Rótulo:", self._label_edit)
+        self._short_edit = QLineEdit()
+        self._short_edit.setMaxLength(SHORT_LABEL_MAX)
+        self._short_edit.setFixedWidth(72)
+        self._short_edit.setPlaceholderText("auto")
+        self._short_edit.setToolTip(
+            "Até 3 caracteres desenhados na posição desta tecla no display do "
+            "macropad. Em branco, o aplicativo abrevia o rótulo."
+        )
+        form.addRow("No display:", self._short_edit)
         layout.addLayout(form)
 
         self._description = QLabel()
@@ -129,8 +140,22 @@ class ActionEditorDialog(QDialog):
             page.keys_edit = QLineEdit()
             page.keys_edit.setPlaceholderText("ctrl+shift+p")
             form.addRow("Combinação:", page.keys_edit)
+            record_row = QHBoxLayout()
+            page.recorder = QKeySequenceEdit()
+            page.recorder.setMaximumSequenceLength(1)
+            page.recorder.setToolTip(
+                "Clique aqui e pressione a combinação no seu teclado; ela é "
+                "transcrita para o campo acima."
+            )
+            page.recorder.keySequenceChanged.connect(
+                lambda seq, page=page: self._on_recorded(page, seq)
+            )
+            record_row.addWidget(QLabel("Gravar:"))
+            record_row.addWidget(page.recorder, stretch=1)
+            form.addRow(record_row)
             hint = QLabel(
-                "Separe as teclas com «+». Aceitos: ctrl, alt, shift, win, "
+                "Clique em «Gravar» e pressione a combinação, ou escreva-a "
+                "separando as teclas com «+». Aceitos: ctrl, alt, shift, win, "
                 "f1–f20, enter, tab, esc, setas, letras e números."
             )
             hint.setWordWrap(True)
@@ -252,6 +277,12 @@ class ActionEditorDialog(QDialog):
             form.addRow(info)
         return page
 
+    def _on_recorded(self, page: QWidget, sequence: QKeySequence) -> None:
+        """Transcreve a combinação gravada para o campo de texto."""
+        names = keys.names_from_qt(sequence)
+        if names:
+            page.keys_edit.setText("+".join(names))
+
     # --------------------------------------------------------------- macro
 
     def _macro_add(self, page: QWidget) -> None:
@@ -320,6 +351,7 @@ class ActionEditorDialog(QDialog):
             return
         self._type_combo.setCurrentIndex(index)
         self._label_edit.setText(action.label)
+        self._short_edit.setText(action.short)
         page = self._pages[action.type]
         p = action.params
         if action.type == "hotkey":
@@ -469,7 +501,12 @@ class ActionEditorDialog(QDialog):
         if error:
             QMessageBox.warning(self, "Configuração incompleta", error)
             return None
-        action = Action(type=name, params=params, label=self._label_edit.text().strip())
+        action = Action(
+            type=name,
+            params=params,
+            label=self._label_edit.text().strip(),
+            short=self._short_edit.text().strip()[:SHORT_LABEL_MAX],
+        )
         if not action.label:
             action.label = _auto_label(action)
         return action

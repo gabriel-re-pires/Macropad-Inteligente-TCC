@@ -65,6 +65,8 @@ class SerialLink:
         # Portas que responderam algo que não é o macropad. Guardá-las evita
         # insistir para sempre na mesma quando há outros dispositivos USB.
         self._rejected: set[str] = set()
+        # Se a conexão atual já foi anunciada à interface como ativa.
+        self._announced = False
 
     # ------------------------------------------------------------- ciclo
 
@@ -104,14 +106,17 @@ class SerialLink:
             if port is None:
                 time.sleep(self.RECONNECT_DELAY_S)
                 continue
+            self._announced = False
             try:
                 self._connect_and_read(port)
             except (serial.SerialException, OSError):
                 pass
             finally:
-                was_connected = self._serial is not None
                 self._close()
-                if was_connected:
+                # Só avisa a queda de uma conexão que chegou a ser anunciada;
+                # uma porta que falhou no handshake nunca "conectou".
+                if self._announced:
+                    self._announced = False
                     self._on_state(False, port)
             time.sleep(self.RECONNECT_DELAY_S)
 
@@ -150,13 +155,18 @@ class SerialLink:
     def _connect_and_read(self, port: str) -> None:
         ser = serial.Serial(port, protocol.BAUD_RATE, timeout=0.5)
         self._serial = ser
-        if not self._handshake(ser):
+        ok, buffer, pending = self._handshake(ser)
+        if not ok:
             log.debug("%s não respondeu ao handshake", port)
             self._rejected.add(port)
             return
         self._rejected.discard(port)
+        self._announced = True
         self._on_state(True, port)
-        buffer = b""
+        # O que chegou junto com a resposta do handshake (tipicamente o
+        # ``hello`` logo após o ``pong``) é entregue, não descartado.
+        for early in pending:
+            self._on_message(early)
         last_ping = time.monotonic()
         while self._running and ser.is_open:
             now = time.monotonic()
@@ -173,25 +183,50 @@ class SerialLink:
                 if message is not None:
                     self._on_message(message)
 
-    def _handshake(self, ser: serial.Serial) -> bool:
-        """Confirma que a porta pertence ao macropad antes de anunciá-la."""
+    def _handshake(
+        self, ser: serial.Serial
+    ) -> tuple[bool, bytes, list[dict[str, Any]]]:
+        """Confirma que a porta pertence ao macropad antes de anunciá-la.
+
+        Devolve ``(reconhecido, resto do buffer, mensagens já decodificadas)``.
+        O firmware responde ao ``ping`` com ``pong`` e, se acabou de nos
+        ver, um ``hello`` na sequência — frequentemente no mesmo pacote.
+        Descartar o resto do buffer perderia esse ``hello`` (e com ele a
+        primeira atualização do display).
+        """
         with self._write_lock:
             ser.write(protocol.encode(protocol.msg_ping()))
         deadline = time.monotonic() + self.HANDSHAKE_TIMEOUT_S
         buffer = b""
+        pending: list[dict[str, Any]] = []
+        recognized = False
         while time.monotonic() < deadline:
             chunk = ser.read(64)
             if not chunk:
+                if recognized:
+                    break
                 continue
             buffer += chunk
             # Só linhas completas: decodificar fragmentos daria resultados
             # imprevisíveis a cada leitura parcial.
             while b"\n" in buffer:
                 line, buffer = buffer.split(b"\n", 1)
-                message = protocol.decode(line)
-                if message and message.get("t") in ("pong", "hello", "key"):
-                    return True
-        return False
+                decoded = protocol.decode(line)
+                if decoded is None:
+                    continue
+                if decoded.get("t") in ("pong", "hello"):
+                    recognized = True
+                # Eventos de tecla que chegam ANTES da resposta ao ping
+                # ficaram represados no firmware enquanto ninguém lia a
+                # porta (o cabo estava ligado, o aplicativo não): são
+                # antigos e executá-los agora dispararia ações fantasmas.
+                if recognized:
+                    pending.append(decoded)
+            if recognized and not buffer:
+                # Resposta completa já em mãos: não há por que esperar o
+                # resto do timeout.
+                break
+        return recognized, buffer, pending
 
     def _close(self) -> None:
         ser = self._serial

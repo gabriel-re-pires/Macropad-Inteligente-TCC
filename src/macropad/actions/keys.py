@@ -85,3 +85,62 @@ def is_valid(name: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+# ------------------------------------------------------- gravação (Qt)
+
+# Teclas especiais do Qt -> nome aceito por ``resolve``.
+_QT_SPECIAL: dict[int, str] = {
+    0x01000004: "enter",     # Qt.Key_Return
+    0x01000005: "enter",     # Qt.Key_Enter
+    0x01000001: "tab",       # Qt.Key_Tab
+    0x01000000: "esc",       # Qt.Key_Escape
+    0x20: "space",           # Qt.Key_Space
+    0x01000003: "backspace",
+    0x01000007: "delete",
+    0x01000006: "insert",
+    0x01000010: "home",
+    0x01000011: "end",
+    0x01000016: "pageup",
+    0x01000017: "pagedown",
+    0x01000013: "up",
+    0x01000015: "down",
+    0x01000012: "left",
+    0x01000014: "right",
+    0x01000024: "capslock",
+    0x01000009: "printscreen",
+    0x01000008: "pause",
+    0x01000055: "menu",
+}
+_QT_SPECIAL.update({0x01000030 + i: f"f{i + 1}" for i in range(20)})  # Key_F1..F20
+
+_QT_MODIFIERS = (
+    (0x04000000, "ctrl"),   # Qt.ControlModifier
+    (0x08000000, "alt"),    # Qt.AltModifier
+    (0x02000000, "shift"),  # Qt.ShiftModifier
+    (0x10000000, "win"),    # Qt.MetaModifier
+)
+
+
+def names_from_qt(sequence: object) -> list[str]:
+    """Converte uma ``QKeySequence`` gravada na UI para a lista de nomes.
+
+    Recebe ``object`` para manter este módulo livre de Qt: só usa o
+    ``toCombined()`` do primeiro ``QKeyCombination``. Devolve lista vazia
+    para combinações sem tecla principal (só modificadores) ou com tecla
+    que o pynput não representa.
+    """
+    try:
+        combined = int(sequence[0].toCombined())  # type: ignore[index]
+    except (IndexError, AttributeError, TypeError):
+        return []
+    modifiers = combined & 0xFE000000
+    key = combined & 0x01FFFFFF
+    names = [name for flag, name in _QT_MODIFIERS if modifiers & flag]
+    if key in _QT_SPECIAL:
+        names.append(_QT_SPECIAL[key])
+    elif 0x20 < key < 0x7F:
+        names.append(chr(key).lower())
+    else:
+        return []
+    return names

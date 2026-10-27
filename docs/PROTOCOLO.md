@@ -18,29 +18,63 @@ exatamente estas mensagens.
 ## Identificação da porta
 
 O host procura portas com o VID USB da Espressif (`0x303A`) e confirma o
-dispositivo com um handshake: envia `ping` e espera `pong` (ou qualquer
-mensagem válida) em até 2 segundos.
+dispositivo com um handshake: envia `ping` e espera `pong` ou `hello`
+em até 2 segundos.
 
 ## Mensagens: dispositivo → host
 
 | Mensagem | Quando enviar |
 |---|---|
-| `{"t":"hello","fw":"1.0.0","keys":18,"screen":{"w":128,"h":64}}` | ao iniciar e ao receber `ping` (junto com `pong`) |
-| `{"t":"pong"}` | em resposta a `ping` |
+| `{"t":"hello","fw":"2.0.0","keys":18,"screen":{"w":128,"h":64}}` | ao iniciar e **na primeira mensagem válida após um período sem host** (ver *Heartbeat*). Não a cada `ping`: o host responde a todo `hello` reenviando o quadro do display (~1,4 KB), então `hello` a cada 3 s desperdiçaria o canal. |
+| `{"t":"pong"}` | em resposta a todo `ping` |
 | `{"t":"key","k":0,"e":"down"}` | tecla pressionada (`k` = índice 0–17) |
 | `{"t":"key","k":0,"e":"up"}` | tecla solta |
 
-Índice das teclas: varredura por linhas, da esquerda para a direita, de
-cima para baixo (tecla 0 = superior esquerda, tecla 17 = inferior direita).
-O firmware deve aplicar *debounce* (~5 ms) antes de reportar eventos.
+### Índice das teclas
+
+O índice segue a **ordem de leitura do layout físico** do PCB, que é uma
+grade de 4 linhas × 5 colunas com as duas primeiras posições da linha de
+cima vazias (ali ficam o módulo ESP32-C3 e o display):
+
+```
+              [ 0] [ 1] [ 2]
+    [ 3] [ 4] [ 5] [ 6] [ 7]
+    [ 8] [ 9] [10] [11] [12]
+    [13] [14] [15] [16] [17]
+```
+
+A tabela é a mesma nos dois lados: `KEY_LAYOUT` em
+`src/macropad/core/models.py` e `KEY_INDEX` em
+`firmware/macropad_firmware/config.h`. A matriz elétrica (que GPIO é linha
+e qual é coluna) é detalhe do firmware; o host só conhece o índice.
+
+O firmware deve aplicar *debounce* por tempo de estabilidade (~5 ms) antes
+de reportar eventos. Eventos de tecla que o host receber **antes** da
+resposta ao seu primeiro `ping` são considerados represados (gerados
+enquanto ninguém lia a porta) e descartados.
 
 ## Mensagens: host → dispositivo
 
 | Mensagem | Efeito |
 |---|---|
-| `{"t":"ping"}` | responder `pong` (e `hello`); também funciona como *heartbeat* |
-| `{"t":"text","lines":["VS Code"]}` | limpar o display e exibir até 3 linhas centralizadas (nome do perfil ativo) |
-| `{"t":"img","fmt":"xbm1","d":"<base64>"}` | exibir imagem em tela cheia (ícone do perfil ativo) |
+| `{"t":"ping"}` | responder `pong` (precedido de `hello` se o host estava ausente); também funciona como *heartbeat* |
+| `{"t":"text","lines":["VS Code"]}` | limpar o display e exibir até 3 linhas centralizadas (fonte 5x7 da Adafruit GFX; 1 linha em tamanho 2, mais de uma em tamanho 1; altura de linha `8*tamanho + 4`; bloco centralizado verticalmente) |
+| `{"t":"img","fmt":"xbm1","d":"<base64>"}` | exibir imagem em tela cheia |
+
+**Na prática o host só usa `img`.** Toda a composição (mapa de teclas com o
+nome do perfil e a abreviação de cada tecla, ícone do perfil, nome
+centralizado) é feita no PC com a mesma fonte do firmware
+(`core/oled_render.py`, `core/display.py`), e o resultado vai como bitmap.
+Isso mantém o firmware mínimo e garante que o preview na interface seja
+idêntico ao hardware. `text` continua no contrato como recurso de
+diagnóstico e para hosts simples.
+
+O host suprime o reenvio de um quadro idêntico ao último enviado, exceto
+após um `hello` (o dispositivo pode ter reiniciado). Ao pressionar uma
+tecla, o host envia um quadro com a tecla destacada e, ~250 ms depois, o
+quadro normal: dois `img` em sequência. Por isso o firmware precisa de
+buffer de recepção suficiente (4 KB) e I2C a 400 kHz, para que o
+redesenho de um quadro (~25 ms) não faça o próximo transbordar.
 
 ### Formato de imagem `xbm1`
 
@@ -56,12 +90,18 @@ O firmware deve aplicar *debounce* (~5 ms) antes de reportar eventos.
 
 ```
 Firmware                     Host (software)
-   |------- hello ---------------->|   (ao conectar USB)
-   |<------ img/text --------------|   (ícone/nome do perfil ativo)
+   |<------ ping ------------------|   (host encontrou a porta)
+   |------- hello ---------------->|   (primeiro contato após boot/timeout)
+   |------- pong ----------------->|
+   |<------ img -------------------|   (mapa de teclas do perfil ativo)
    |------- key k=4 down --------->|   (host executa a ação da tecla 4)
+   |<------ img -------------------|   (tecla 4 destacada no mapa)
    |------- key k=4 up ----------->|
+   |<------ img -------------------|   (mapa normal, ~250 ms depois)
    |------- key k=17 down -------->|   (tecla de modo: host troca o perfil)
-   |<------ img/text --------------|   (display atualizado para o novo perfil)
+   |<------ img -------------------|   (mapa do novo perfil)
+   |<------ ping ------------------|   (a cada 3 s)
+   |------- pong ----------------->|   (sem hello: o host já é conhecido)
 ```
 
 Observação de arquitetura: **toda a lógica de atalhos fica no host**. O
@@ -77,7 +117,15 @@ considera o host **presente** se recebeu qualquer mensagem válida nos
 atua como teclado Bluetooth (BLE HID) com atalhos fixos gravados no
 firmware. Os eventos de tecla continuam sendo emitidos pela serial em
 ambos os modos (assim o software "pega" o dispositivo imediatamente ao
-abrir). A implementação de referência está em `firmware/`.
+abrir). Quando o host volta a ser visto depois de ausente, o firmware
+envia um `hello`: é o gatilho para o host restaurar o display. A
+implementação de referência está em `firmware/`.
+
+Por que BLE e não USB HID: o periférico USB do ESP32-C3 é um controlador
+Serial/JTAG de função fixa; ele **não** consegue se apresentar como
+teclado HID (isso exige ESP32-S2/S3). O modo autônomo via Bluetooth é a
+forma de o dispositivo funcionar "sem driver" em qualquer computador ou
+celular.
 
 ### Esqueleto do lado do firmware (Arduino, pseudocódigo)
 
@@ -86,7 +134,7 @@ void loop() {
   // 1. Varre a matriz de teclas com debounce; em cada mudança:
   //    Serial.printf("{\"t\":\"key\",\"k\":%d,\"e\":\"%s\"}\n", k, down ? "down" : "up");
   // 2. Lê linhas da Serial; usa ArduinoJson para decodificar:
-  //    - "ping" -> responde pong + hello
+  //    - "ping" -> responde pong (+ hello antes, se o host estava ausente)
   //    - "text" -> display.clearDisplay(); imprime as linhas; display.display();
   //    - "img"  -> base64-decode de d para buf[1024]; drawBitmap; display.display();
 }

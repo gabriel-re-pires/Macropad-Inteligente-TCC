@@ -9,16 +9,49 @@ sem alterar o modelo (padrão Strategy + Registry, ver ``actions/``).
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
 log = logging.getLogger(__name__)
 
-# Layout físico do macropad (18 teclas: 3 linhas x 6 colunas).
-KEY_COUNT = 18
-KEY_ROWS = 3
-KEY_COLS = 6
+# ----------------------------------------------------------------- layout
+# Layout físico do macropad, conforme o PCB: uma grade de 4 linhas x 5
+# colunas em que as duas primeiras posições da linha de cima ficam vazias
+# (ali ficam o módulo ESP32-C3 e o display). São 18 teclas, numeradas na
+# ordem de leitura — a mesma ordem usada pelo firmware (docs/PROTOCOLO.md):
+#
+#               [ 0] [ 1] [ 2]
+#     [ 3] [ 4] [ 5] [ 6] [ 7]
+#     [ 8] [ 9] [10] [11] [12]
+#     [13] [14] [15] [16] [17]
+#
+# Esta tabela é a única fonte de verdade do layout: a grade da interface,
+# o simulador, o ícone do aplicativo e o mapa de teclas desenhado no
+# display derivam dela.
+GRID_ROWS = 4
+GRID_COLS = 5
+KEY_LAYOUT: tuple[tuple[int, int], ...] = (
+    (0, 2), (0, 3), (0, 4),
+    (1, 0), (1, 1), (1, 2), (1, 3), (1, 4),
+    (2, 0), (2, 1), (2, 2), (2, 3), (2, 4),
+    (3, 0), (3, 1), (3, 2), (3, 3), (3, 4),
+)
+KEY_COUNT = len(KEY_LAYOUT)
+
+# Abreviação de uma tecla no mapa do display: 5 colunas x 3 caracteres
+# (fonte 6 px) + 4 espaços = 19 caracteres, que cabem nos 21 do display.
+SHORT_LABEL_MAX = 3
+
+
+def key_at(row: int, col: int) -> int | None:
+    """Índice da tecla na posição da grade, ou ``None`` se a posição é vazia."""
+    try:
+        return KEY_LAYOUT.index((row, col))
+    except ValueError:
+        return None
 
 # Resolução do display OLED 0,96" (SSD1306).
 SCREEN_W = 128
@@ -33,22 +66,63 @@ class Action:
                ``command``, ``launch``, ``media``, ``macro``, ``home_assistant``).
     ``params`` são os parâmetros específicos daquele tipo.
     ``label``  é o nome curto exibido na tecla dentro do configurador.
+    ``short``  é a abreviação (até 3 caracteres) desenhada no mapa de teclas
+               do display OLED; vazia, deriva-se do rótulo.
     """
 
     type: str
     params: dict[str, Any] = field(default_factory=dict)
     label: str = ""
+    short: str = ""
+
+    @property
+    def display_short(self) -> str:
+        """Abreviação efetiva para o display (``short`` ou derivada do rótulo)."""
+        if self.short:
+            # Escolhida pelo usuário: vai como está (só sem acentos).
+            return _ascii(self.short)[:SHORT_LABEL_MAX] or "?"
+        return short_label(self.label or self.type)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"type": self.type, "params": self.params, "label": self.label}
+        data: dict[str, Any] = {
+            "type": self.type,
+            "params": self.params,
+            "label": self.label,
+        }
+        if self.short:
+            data["short"] = self.short
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Action:
         return cls(
             type=data["type"],
             params=dict(data.get("params", {})),
-            label=data.get("label", ""),
+            label=str(data.get("label", "") or ""),
+            short=str(data.get("short", "") or "")[:SHORT_LABEL_MAX],
         )
+
+
+def short_label(text: str) -> str:
+    """Reduz um texto a uma abreviação de até 3 caracteres ASCII maiúsculos.
+
+    A fonte do display não tem acentos, então ``Edição`` vira ``EDI``.
+    Palavras compostas usam as iniciais (``Ctrl+Shift+P`` -> ``CSP``) quando
+    isso rende mais de um caractere; senão, o início da palavra.
+    """
+    words = [w for w in re.split(r"[\s+_\-/.:→]+", _ascii(text)) if w]
+    if not words:
+        return "?"
+    if len(words) >= 2:
+        initials = "".join(w[0] for w in words)[:SHORT_LABEL_MAX]
+        if len(initials) >= 2:
+            return initials.upper()
+    return words[0][:SHORT_LABEL_MAX].upper()
+
+
+def _ascii(text: str) -> str:
+    """Remove acentos (a fonte do display só tem ASCII)."""
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
 
 
 @dataclass
@@ -131,6 +205,12 @@ class Settings:
     serial_port: str | None = None
     # Troca automática de perfil pelo aplicativo em foco.
     auto_switch_enabled: bool = False
+    # O que o display mostra: "mapa" (nome do perfil + abreviação de cada
+    # tecla, no layout físico) ou "icone" (imagem do perfil; sem imagem,
+    # o nome).
+    display_mode: str = "mapa"
+    # Ao pressionar uma tecla, destaca-a por um instante no mapa do display.
+    key_feedback: bool = True
     # Registrar o aplicativo para iniciar junto com o Windows (na bandeja).
     start_with_windows: bool = False
     # Integração Home Assistant.
@@ -146,6 +226,8 @@ class Settings:
             "mode_key": self.mode_key,
             "serial_port": self.serial_port,
             "auto_switch_enabled": self.auto_switch_enabled,
+            "display_mode": self.display_mode,
+            "key_feedback": self.key_feedback,
             "start_with_windows": self.start_with_windows,
             "ha_url": self.ha_url,
             "ha_token": self.ha_token,
@@ -160,6 +242,10 @@ class Settings:
             mode_key=data.get("mode_key"),
             serial_port=data.get("serial_port"),
             auto_switch_enabled=bool(data.get("auto_switch_enabled", False)),
+            display_mode=(
+                "icone" if data.get("display_mode") == "icone" else "mapa"
+            ),
+            key_feedback=bool(data.get("key_feedback", True)),
             start_with_windows=bool(data.get("start_with_windows", False)),
             ha_url=data.get("ha_url", ""),
             ha_token=data.get("ha_token", ""),

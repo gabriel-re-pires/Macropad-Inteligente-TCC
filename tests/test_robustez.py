@@ -640,3 +640,67 @@ class RodizioDePortasTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HandshakeTest(unittest.TestCase):
+    """O ``hello`` que o firmware envia logo após o ``pong`` chegava no
+    mesmo pacote e era descartado junto com o resto do buffer do handshake;
+    o display só era atualizado no ping seguinte, 3 s depois.
+    """
+
+    class SerialFalsa:
+        def __init__(self, resposta: bytes):
+            self.is_open = True
+            self._dados = resposta
+            self.escrito = b""
+
+        def write(self, dados):
+            self.escrito += dados
+
+        def read(self, n):
+            # Entrega tudo de uma vez, como a USB costuma fazer.
+            dados, self._dados = self._dados[:n], self._dados[n:]
+            return dados
+
+    def _link(self):
+        return SerialLink(on_message=lambda m: None, on_state=lambda c, p: None)
+
+    def test_mensagens_que_vem_junto_com_o_pong_nao_se_perdem(self):
+        ser = self.SerialFalsa(b'{"t":"pong"}\n{"t":"hello","fw":"2.0.0"}\n')
+        ok, resto, pendentes = self._link()._handshake(ser)
+        self.assertTrue(ok)
+        self.assertEqual([m["t"] for m in pendentes], ["pong", "hello"])
+        self.assertEqual(resto, b"")
+        self.assertIn(b'"ping"', ser.escrito)
+
+    def test_linha_parcial_sobra_no_buffer(self):
+        ser = self.SerialFalsa(b'{"t":"pong"}\n{"t":"hel')
+        ok, resto, pendentes = self._link()._handshake(ser)
+        self.assertTrue(ok)
+        self.assertEqual(resto, b'{"t":"hel')
+
+    def test_logs_de_boot_antes_do_pong_sao_ignorados(self):
+        ser = self.SerialFalsa(b"ets Jul 29 2019\r\nrst:0x1\n{\"t\":\"pong\"}\n")
+        ok, _, pendentes = self._link()._handshake(ser)
+        self.assertTrue(ok)
+        self.assertEqual([m["t"] for m in pendentes], ["pong"])
+
+    def test_teclas_represadas_antes_do_pong_sao_descartadas(self):
+        # Cabo ligado, aplicativo fechado: o firmware acumulou eventos
+        # antigos no buffer de TX. Só o que vem depois do pong é atual.
+        ser = self.SerialFalsa(
+            b'{"t":"key","k":3,"e":"down"}\n{"t":"key","k":3,"e":"up"}\n'
+            b'{"t":"pong"}\n{"t":"hello"}\n{"t":"key","k":5,"e":"down"}\n'
+        )
+        ok, _, pendentes = self._link()._handshake(ser)
+        self.assertTrue(ok)
+        self.assertEqual(
+            [(m["t"], m.get("k")) for m in pendentes],
+            [("pong", None), ("hello", None), ("key", 5)],
+        )
+
+    def test_porta_muda_nao_e_reconhecida(self):
+        with mock.patch.object(SerialLink, "HANDSHAKE_TIMEOUT_S", 0.05):
+            ok, _, pendentes = self._link()._handshake(self.SerialFalsa(b""))
+        self.assertFalse(ok)
+        self.assertEqual(pendentes, [])

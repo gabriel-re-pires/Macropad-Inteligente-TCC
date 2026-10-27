@@ -4,7 +4,7 @@
 
 O software segue uma **arquitetura em camadas** com dependências apontando
 para o domínio. A camada de domínio (`core/`) não conhece Qt nem pyserial,
-o que permite testá-la isoladamente (18 testes em `tests/`).
+o que permite testá-la isoladamente (100 testes em `tests/`).
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -23,7 +23,9 @@ o que permite testá-la isoladamente (18 testes em `tests/`).
 │ Store      │ │ (thread única) │ │ (thread própria)│
 │ Profile    │ │ registry de    │ │ SimulatorLink   │
 │ Action     │ │ executores     │ │ protocol (JSON) │
-│ icons      │ └───┬────────────┘ └─────────────────┘
+│ display    │ └───┬────────────┘ └─────────────────┘
+│ oled_render│     │
+│ icons      │     │
 └────────────┘     │
               ┌────▼─────────────┐
               │ integrations/    │
@@ -55,7 +57,10 @@ o que permite testá-la isoladamente (18 testes em `tests/`).
 3. **Threads.** Quatro threads cooperam: a da UI (Qt), a do enlace serial
    (leitura bloqueante + reconexão) e **duas** do `ActionRunner`. A
    comunicação entre elas usa sinais Qt (`DeviceBridge`), que são
-   thread-safe, e `queue.Queue` para as ações.
+   thread-safe, e `queue.Queue` para as ações. O `Controller` roda na
+   thread da UI e é livre de Qt: o único serviço de tempo de que precisa
+   (desfazer o destaque da tecla no display) é injetado como
+   `schedule(segundos, função)` pela raiz de composição.
 
    O `ActionRunner` tem duas vias porque as ações têm naturezas
    diferentes: as de **entrada** (atalho, texto, mídia, comando, macro)
@@ -72,12 +77,27 @@ o que permite testá-la isoladamente (18 testes em `tests/`).
    frames exatamente como o firmware faria. Permite desenvolver e
    demonstrar o software sem o hardware.
 
-5. **Ícones dos perfis.** O display é 128×64 monocromático, então
-   qualquer imagem é convertida com Pillow: redimensionada com proporção,
-   centralizada e quantizada para 1 bpp com difusão de erro
-   (Floyd–Steinberg). Pictogramas simples de alto contraste dão o melhor
-   resultado; o preview na UI mostra ao usuário exatamente o que
-   aparecerá no OLED antes de salvar.
+5. **Composição do display no host.** O firmware só sabe desenhar
+   bitmaps; todas as telas são montadas em Python (`core/display.py`) como
+   imagens 1 bpp e enviadas pela mensagem `img`. Para isso o host embute a
+   mesma fonte 5x7 da Adafruit GFX usada no firmware (`core/oled_font.py`,
+   `core/oled_render.py`), o que torna o preview da interface e o
+   simulador **idênticos, pixel a pixel**, ao hardware, e torna as telas
+   testáveis com `unittest`. A tela principal é o **mapa de teclas**: nome
+   do perfil numa faixa invertida e, na posição física de cada tecla, uma
+   abreviação de até 3 caracteres (`Action.short`, derivada do rótulo
+   quando não informada). É o que materializa a tese do TCC: teclas
+   rotuladas pelo display, sem memorização. A tecla pressionada é
+   invertida por ~250 ms (retorno visual). Alternativamente o display
+   mostra o ícone do perfil (imagem convertida com Pillow: redimensionada,
+   centralizada e quantizada para 1 bpp com Floyd–Steinberg) ou seu nome.
+
+5b. **Layout físico como fonte única.** `KEY_LAYOUT` em `core/models.py`
+   descreve a grade real do PCB (4×5 com a linha de cima começando na
+   terceira coluna). A grade da interface, o simulador, o ícone do
+   aplicativo e o mapa do display derivam dela; o firmware tem a tabela
+   equivalente (`KEY_INDEX` em `config.h`). Mudar o PCB é mudar duas
+   tabelas.
 
 6. **Persistência** em JSON legível em `%APPDATA%/MacropadConfigurator/`
    com escrita atômica (arquivo temporário + `replace`) e recuperação de

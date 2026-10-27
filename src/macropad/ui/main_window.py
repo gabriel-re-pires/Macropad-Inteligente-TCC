@@ -29,9 +29,8 @@ from PySide6.QtWidgets import (
 
 from .. import APP_NAME
 from ..app import AUTO_PORT, SIMULATOR_PORT, MacropadApp
-from ..core import autostart, icons
+from ..core import autostart
 from ..core.models import Action, Profile
-from ..device import protocol
 from ..device.link import available_ports
 from . import app_icon
 from .action_editor import ActionEditorDialog
@@ -266,6 +265,11 @@ class MainWindow(QMainWindow):
         # chegou até o software, mesmo quando a ação não tem efeito visível.
         self._grid.flash(key)
         self.statusBar().showMessage(f"Tecla {key + 1} pressionada", 1500)
+        # O display físico destaca a tecla; o preview acompanha.
+        frame = self._core.controller.current_frame(highlight=key)
+        if frame is not None:
+            self._oled.show_frame(frame)
+            QTimer.singleShot(300, self._refresh_preview)
 
     def _on_action_error(self, message: str) -> None:
         """Reporta a falha de uma ação onde o usuário possa vê-la.
@@ -420,18 +424,14 @@ class MainWindow(QMainWindow):
         self._grid.refresh(profile, self._core.store.settings.mode_key)
 
     def _refresh_preview(self) -> None:
-        """Espelha na UI o que o display físico está mostrando."""
-        profile = self._core.store.active_profile
-        if profile is None:
-            return
-        if profile.icon_path:
-            try:
-                payload = icons.icon_payload(profile.icon_path)
-                self._oled.show_message(protocol.msg_image(payload))
-                return
-            except (OSError, ValueError):
-                pass
-        self._oled.show_message(protocol.msg_text([profile.name]))
+        """Espelha na UI o que o display físico está mostrando.
+
+        O quadro vem do mesmo código que o envia ao dispositivo, então o
+        preview nunca diverge do hardware.
+        """
+        frame = self._core.controller.current_frame()
+        if frame is not None:
+            self._oled.show_frame(frame)
 
     # ------------------------------------------------------------ ciclo
 

@@ -5,8 +5,8 @@ externo no empacotamento e permite gerar qualquer resolução. É a mesma
 fonte usada pela janela, pela bandeja e pelo ``.ico`` do executável (ver
 ``tools/make_icon.py``), então os três nunca divergem.
 
-O desenho é uma miniatura do próprio macropad: o corpo arredondado e a
-grade de 3x6 teclas.
+O desenho é uma miniatura do próprio macropad: o corpo arredondado e as
+18 teclas na disposição real do PCB (:data:`~macropad.core.models.KEY_LAYOUT`).
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPixmap
 
-from ..core.models import KEY_COLS, KEY_ROWS
+from ..core.models import KEY_LAYOUT
 
 # O desenho foi ajustado nesta resolução; as demais são proporcionais.
 BASE_SIZE = 64
@@ -43,11 +43,10 @@ def render(size: int = BASE_SIZE) -> QPixmap:
 
     painter.setPen(Qt.NoPen)
     painter.setBrush(QBrush(_TECLA))
-    for row in range(KEY_ROWS):
-        for col in range(KEY_COLS):
-            painter.drawRoundedRect(
-                e(8 + col * 9), e(16 + row * 12), e(6), e(8), e(2), e(2)
-            )
+    for row, col in KEY_LAYOUT:
+        painter.drawRoundedRect(
+            e(10 + col * 10), e(13 + row * 10), e(7), e(7), e(2), e(2)
+        )
     painter.end()
     return pixmap
 

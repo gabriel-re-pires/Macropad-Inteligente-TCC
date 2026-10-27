@@ -1,9 +1,9 @@
 """Janela do dispositivo virtual (simulador).
 
 Reproduz o macropad físico: o "display" OLED em cima e as 18 teclas
-embaixo. Clicar em uma tecla gera os mesmos eventos de protocolo que o
-hardware geraria — todo o restante do software se comporta de forma
-idêntica.
+embaixo, na mesma disposição do PCB. Clicar em uma tecla gera os mesmos
+eventos de protocolo que o hardware geraria — todo o restante do software
+se comporta de forma idêntica.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGridLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
-from ..core.models import KEY_COLS, KEY_COUNT
+from ..core.models import KEY_LAYOUT
 from ..device.simulator import SimulatorLink
 from .oled_preview import OledPreview
 
@@ -33,12 +33,12 @@ class SimulatorWindow(QWidget):
 
         grid = QGridLayout()
         grid.setSpacing(6)
-        for i in range(KEY_COUNT):
+        for i, (row, col) in enumerate(KEY_LAYOUT):
             button = QPushButton(str(i + 1))
             button.setObjectName("keyButton")
             button.setFixedSize(56, 48)
             button.clicked.connect(lambda checked=False, k=i: self._link.press_key(k))
-            grid.addWidget(button, i // KEY_COLS, i % KEY_COLS)
+            grid.addWidget(button, row, col)
         layout.addLayout(grid)
 
         # O display virtual espelha tudo o que o host envia ao "firmware".

@@ -4,11 +4,22 @@ Software de configuração e controle do macropad ESP32-C3 (18 teclas +
 display OLED 0,96") — TCC de Engenharia da Computação, UEMG Ituiutaba.
 
 O aplicativo detecta o macropad pela porta USB, permite associar uma ação
-a cada tecla, organiza as ações em **perfis** ilimitados (com nome e
-ícone exibidos no display do dispositivo) e alterna entre perfis por uma
-**tecla de modo** escolhida pelo usuário no próprio teclado. Também é
-possível **trocar de perfil automaticamente pelo aplicativo em foco**
-(opcional; a tecla de modo continua prevalecendo até o foco mudar).
+a cada tecla, organiza as ações em **perfis** ilimitados e alterna entre
+perfis por uma **tecla de modo** escolhida pelo usuário no próprio
+teclado. Também é possível **trocar de perfil automaticamente pelo
+aplicativo em foco** (opcional; a tecla de modo continua prevalecendo até
+o foco mudar).
+
+O **display OLED mostra o mapa de teclas** do perfil ativo: o nome do
+perfil e, na posição física de cada tecla, uma abreviação de até três
+letras (definida no editor ou derivada do rótulo). A tecla pressionada
+acende no display por um instante. Quem preferir pode exibir o ícone do
+perfil em vez do mapa. O preview na interface e o simulador reproduzem o
+display pixel a pixel, com a mesma fonte do firmware.
+
+A grade de teclas na interface tem a forma do PCB real: 4 linhas × 5
+colunas, com a linha de cima começando na terceira coluna (o espaço vazio
+é onde ficam o módulo e o display).
 
 Roda em **segundo plano na bandeja do sistema** (fechar a janela não
 encerra) e pode **iniciar junto com o Windows**. O projeto é **híbrido**:
@@ -32,7 +43,7 @@ executável a partir do código (ver [Gerar o executável](#gerar-o-executável)
 
 | Tipo | Exemplo |
 |---|---|
-| Atalho de teclado | `Ctrl+Shift+P` |
+| Atalho de teclado | `Ctrl+Shift+P` (digitado ou **gravado** pressionando a combinação) |
 | Digitar texto (+ Enter) | enviar `npm run dev` ao terminal do VS Code |
 | Executar comando | `git pull` na pasta do projeto, em terminal visível ou oculto |
 | Abrir app/arquivo/site | abrir o VS Code, uma pasta ou uma URL |
@@ -63,8 +74,8 @@ py -m venv .venv
 Ou, no dia a dia, apenas `run.bat`.
 
 **Sem o hardware em mãos?** Selecione **Simulador** na caixa "Conexão":
-uma janela reproduz o dispositivo (display + 18 teclas) e todo o software
-funciona de forma idêntica.
+uma janela reproduz o dispositivo (display + 18 teclas no layout real) e
+todo o software funciona de forma idêntica.
 
 ## Testes
 
@@ -126,14 +137,17 @@ consultar quando algo não funciona.
   (referência para a implementação do firmware).
 - [docs/ARQUITETURA.md](docs/ARQUITETURA.md) — camadas, decisões de
   projeto e como estender.
-- [firmware/README.md](firmware/README.md) — firmware de referência do
-  ESP32-C3 (modo híbrido USB serial + BLE HID).
+- [firmware/README.md](firmware/README.md) — firmware do ESP32-C3 (modo
+  híbrido USB serial + BLE HID), com o comando de compilação.
+- [docs/ANALISE_E_PROPOSTA.md](docs/ANALISE_E_PROPOSTA.md) — análise
+  completa do projeto (hardware, firmware, software, TCC) e proposta de
+  evolução por fases.
 
 ## Estrutura
 
 ```
 src/macropad/
-├── core/          # domínio: modelos, perfis, persistência, controlador
+├── core/          # domínio: modelos, layout, perfis, telas do display, controlador
 ├── device/        # protocolo JSON-serial, enlace pyserial, simulador
 ├── actions/       # motor de ações (registry + duas vias de execução)
 ├── integrations/  # Home Assistant, OBS, app em foco
