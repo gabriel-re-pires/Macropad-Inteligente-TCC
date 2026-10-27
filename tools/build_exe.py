@@ -64,6 +64,13 @@ def main() -> int:
             "keyring.backends",
             "--collect-submodules",
             "pynput",
+            # O esptool resolve a classe do chip pelo nome e lê o stub de
+            # gravação de arquivos JSON de dados — nada disso aparece na
+            # análise estática do PyInstaller.
+            "--collect-submodules",
+            "esptool",
+            "--collect-data",
+            "esptool",
             # Módulos Qt pesados que o aplicativo não usa.
             "--exclude-module",
             "PySide6.QtWebEngineCore",

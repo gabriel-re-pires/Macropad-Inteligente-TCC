@@ -156,6 +156,32 @@ serial (o software decide o que fazer), mesmo que o BLE esteja pareado.
 6. **Volta ao host**: reabra o software. O firmware reenvia `hello`, o
    software reenvia o perfil e as teclas deixam de ir pelo BLE.
 
+## Publicar uma versão
+
+O configurador grava uma **imagem única** (bootloader + tabela de
+partições + aplicação), o que o dispensa de conhecer o layout de
+partições escolhido na compilação. A Arduino IDE, porém, exporta os três
+arquivos separados — `tools/merge_firmware.py` os funde:
+
+1. Atualize `FW_VERSION` no `.ino` (é ele quem aparece no aplicativo e
+   nomeia o arquivo gerado).
+2. Na Arduino IDE: **Sketch → Exportar Binário Compilado**.
+3. Na raiz do projeto:
+
+   ```powershell
+   .venv\Scripts\python tools\merge_firmware.py
+   ```
+
+   Sem argumentos o script procura a exportação dentro de `firmware/`;
+   passe a pasta se ela estiver em outro lugar. O resultado é
+   `dist\firmware-<versao>.bin`.
+4. Anexe esse arquivo ao *release* do GitHub. O nome precisa casar com
+   `firmware*.bin` — é assim que o aplicativo o encontra entre os anexos.
+
+Para testar antes de publicar, use **Arquivo .bin no computador** no
+diálogo de gravação; a exportação crua (`*.ino.bin`) também serve, e vai
+para 0x10000 preservando o bootloader já gravado no chip.
+
 ## Observações
 
 - Texto no display: o software converte acentos para ASCII antes de

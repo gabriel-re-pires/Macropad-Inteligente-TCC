@@ -60,6 +60,36 @@ QListWidget, QLineEdit, QPlainTextEdit, QComboBox {
 }
 QListWidget::item { padding: 6px; border-radius: 4px; }
 QListWidget::item:selected { background-color: #145e6e; }
+/* Sem estas regras, o marcador nativo de caixas e botões de opção é
+   desenhado em tons escuros sobre o fundo escuro do tema e fica quase
+   invisível — não dava para saber qual opção estava selecionada. Definir
+   o subcontrole ::indicator substitui o desenho nativo, então o estado
+   marcado é um preenchimento sólido e não um "✓".
+
+   A espessura da borda tem de ser a mesma nos dois estados: o Qt aplica o
+   border-radius à borda externa, e uma borda grossa quando marcado
+   transformaria o círculo do botão de opção em um quadrado arredondado. */
+QCheckBox, QRadioButton { spacing: 8px; }
+QCheckBox::indicator, QRadioButton::indicator {
+    width: 14px;
+    height: 14px;
+    background-color: #1b202c;
+    border: 1px solid #4a5468;
+}
+QCheckBox::indicator { border-radius: 4px; }
+QRadioButton::indicator { border-radius: 8px; }
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {
+    border-color: #8cebff;
+}
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {
+    background-color: #1d7f94;
+    border-color: #8cebff;
+}
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {
+    background-color: #14171e;
+    border-color: #2b3242;
+}
+QCheckBox:disabled, QRadioButton:disabled { color: #5b6373; }
 QStatusBar { color: #7d8595; }
 QToolTip {
     background-color: #232837;
