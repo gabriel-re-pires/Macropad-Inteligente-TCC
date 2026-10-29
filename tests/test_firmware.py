@@ -237,3 +237,51 @@ class VersaoTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VersaoDoAnexoTest(unittest.TestCase):
+    """A versão do firmware precisa vir do NOME DO ANEXO, não da tag.
+
+    As tags do repositório versionam o *aplicativo* (v0.2.0); o firmware
+    tem numeração própria (2.0.0). Lendo a tag, o diálogo comparava
+    "0.2.0" com o "2.0.0" que o dispositivo informa no ``hello`` e
+    concluía que o release era mais antigo — o aviso de atualização dizia
+    o contrário do certo e a mensagem de sucesso mostrava a versão errada.
+    """
+
+    def _release(self, tag, asset):
+        cliente = ClienteFalso(RespostaFalsa(payload=_release_payload(tag, asset)))
+        return firmware_release.latest_release(session=cliente)
+
+    def test_versao_vem_do_anexo_e_nao_da_tag(self):
+        release = self._release("v0.2.0", "firmware-2.0.0.bin")
+        self.assertEqual(release.version, "2.0.0")
+        self.assertEqual(release.tag, "v0.2.0")  # a tag segue sendo a do release
+
+    def test_aviso_de_atualizacao_fica_correto(self):
+        release = self._release("v0.2.0", "firmware-2.1.0.bin")
+        # Dispositivo com 2.0.0 deve ser avisado de que há firmware novo.
+        self.assertTrue(firmware_release.is_newer(release.version, "2.0.0"))
+        igual = self._release("v0.2.0", "firmware-2.0.0.bin")
+        self.assertFalse(firmware_release.is_newer(igual.version, "2.0.0"))
+        self.assertEqual(igual.version, "2.0.0")
+
+    def test_anexo_sem_numero_cai_para_a_tag(self):
+        release = self._release("v0.2.0", "firmware.bin")
+        self.assertEqual(release.version, "0.2.0")
+
+    def test_numero_do_chip_no_nome_nao_vira_versao(self):
+        release = self._release("v0.2.0", "firmware-esp32c3-2.0.0.bin")
+        self.assertEqual(release.version, "2.0.0")
+
+    def test_extrai_versao_de_nomes_variados(self):
+        casos = {
+            "firmware-2.0.0.bin": "2.0.0",
+            "firmware-v2.0.0.bin": "2.0.0",
+            "firmware_1.10.2.bin": "1.10.2",
+            "firmware-2.0.bin": "2.0",
+            "firmware.bin": "",          # sem número: quem decide é a tag
+            "firmware-esp32c3.bin": "",  # "32" não é versão
+        }
+        for nome, esperado in casos.items():
+            self.assertEqual(firmware_release.version_from_asset(nome), esperado, nome)

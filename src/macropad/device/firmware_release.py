@@ -95,10 +95,14 @@ def latest_release(session: Any | None = None) -> FirmwareRelease:
             "anexado (esperado um arquivo firmware*.bin). Grave a partir de um "
             "arquivo local ou publique o binário no release."
         )
+    asset_name = str(asset.get("name"))
     return FirmwareRelease(
         tag=tag or "release",
-        version=normalize_version(tag),
-        asset_name=str(asset.get("name")),
+        # A versão é a do FIRMWARE, lida do nome do anexo: as tags do
+        # repositório versionam o aplicativo, que tem numeração própria.
+        # Sem número no nome, a tag é o melhor palpite disponível.
+        version=version_from_asset(asset_name) or normalize_version(tag),
+        asset_name=asset_name,
         url=str(asset.get("browser_download_url")),
         size=int(asset.get("size") or 0),
         notes=str(payload.get("body") or ""),
@@ -201,6 +205,22 @@ def normalize_version(tag: str) -> str:
     """Extrai ``1.2.0`` de tags como ``v1.2.0``, ``fw-1.2.0`` ou ``1.2.0``."""
     match = re.search(r"\d+(?:\.\d+)*", tag or "")
     return match.group(0) if match else (tag or "").strip()
+
+
+def version_from_asset(asset_name: str) -> str:
+    """Extrai a versão do firmware do nome do anexo (``firmware-2.0.0.bin``).
+
+    É daqui que sai a versão comparada com a que o dispositivo anuncia no
+    ``hello``, porque as tags do repositório versionam o *aplicativo* e
+    não o firmware.
+
+    Exige pelo menos um ponto (``2.0``), senão nomes como
+    ``firmware-esp32c3.bin`` virariam a "versão 32". Devolve string vazia
+    quando o nome não traz versão alguma — cabe a quem chama recorrer à
+    tag.
+    """
+    match = re.search(r"\d+(?:\.\d+)+", asset_name or "")
+    return match.group(0) if match else ""
 
 
 def _parts(version: str) -> tuple[int, ...]:
