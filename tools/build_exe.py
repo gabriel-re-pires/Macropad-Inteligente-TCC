@@ -6,6 +6,12 @@ Produz ``dist/MacropadConfigurator.exe`` — um arquivo único, sem console,
 que roda em um Windows sem Python instalado. É o que se leva para a
 apresentação.
 
+Com o aplicativo aberto, o Windows não deixa sobrescrever o ``.exe`` em
+execução e o PyInstaller falha com "Acesso negado". Feche o aplicativo
+(menu da bandeja → Sair) ou gere em outra pasta::
+
+    .venv\\Scripts\\python tools\\build_exe.py --destino build\\teste
+
 Detalhes que o empacotamento exige:
 
 * ``keyring`` e ``pynput`` escolhem seu backend em tempo de execução,
@@ -17,6 +23,7 @@ Detalhes que o empacotamento exige:
 
 from __future__ import annotations
 
+import argparse
 import shutil
 import subprocess
 import sys
@@ -35,6 +42,20 @@ def _run(argv: list[str], descricao: str) -> None:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--destino",
+        type=Path,
+        default=RAIZ / "dist",
+        help=(
+            "pasta onde gravar o executável (padrão: dist/). Útil quando o "
+            "aplicativo está aberto: o Windows não deixa sobrescrever um .exe "
+            "em execução, e o PyInstaller falha com “Acesso negado”."
+        ),
+    )
+    args = parser.parse_args()
+    destino = args.destino.resolve()
+
     if shutil.which("pyinstaller") is None and not (
         Path(sys.executable).with_name("pyinstaller.exe").exists()
     ):
@@ -55,6 +76,8 @@ def main() -> int:
             "--windowed",
             "--name",
             NOME,
+            "--distpath",
+            str(destino),
             "--icon",
             str(ICONE),
             "--paths",
@@ -87,7 +110,7 @@ def main() -> int:
         "empacotando com o PyInstaller",
     )
 
-    exe = RAIZ / "dist" / f"{NOME}.exe"
+    exe = destino / f"{NOME}.exe"
     if not exe.exists():
         raise SystemExit("o PyInstaller terminou sem produzir o executável")
     print(f"\nPronto: {exe} ({exe.stat().st_size / 1024 / 1024:.1f} MB)")
